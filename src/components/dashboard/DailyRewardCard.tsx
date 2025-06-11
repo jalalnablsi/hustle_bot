@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -43,9 +44,10 @@ export function DailyRewardCard() {
     localStorage.setItem('lastHustleSoulDailyClaim', new Date().toDateString());
     toast({
       title: "Reward Claimed!",
-      description: "You've received 50 SOUL for your daily login.",
+      description: "You've received 50 GOLD for your daily login.",
       variant: "default",
     });
+    // TODO: Integrate with backend to actually award points and update user state
   };
 
   return (
@@ -56,7 +58,7 @@ export function DailyRewardCard() {
           Daily Login Reward
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {isClaimedToday ? "You've already claimed your reward for today." : "Claim your daily SOUL reward!"}
+          {isClaimedToday ? "You've already claimed your reward for today." : "Claim your daily GOLD reward!"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -68,7 +70,7 @@ export function DailyRewardCard() {
           </div>
         ) : (
           <Button onClick={handleClaimReward} className="w-full animate-pulse-glow" size="lg">
-            <Gift className="mr-2 h-5 w-5" /> Claim 50 SOUL
+            <Gift className="mr-2 h-5 w-5" /> Claim 50 GOLD
           </Button>
         )}
       </CardContent>

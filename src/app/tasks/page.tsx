@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -7,11 +8,11 @@ import { Twitter, Send, Youtube, Users, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const initialTasks: Task[] = [
-  { id: '1', title: "Follow on X (Twitter)", description: "Follow our official X account for updates.", reward: 100, actionText: "Follow @HustleSoul", href: "https://twitter.com/example", icon: Twitter, isCompleted: false },
-  { id: '2', title: "Join Telegram Channel", description: "Join our Telegram channel for announcements.", reward: 100, actionText: "Join Channel", href: "https://t.me/example", icon: Send, isCompleted: false },
-  { id: '3', title: "Subscribe on YouTube", description: "Subscribe to our YouTube channel for video content.", reward: 50, actionText: "Subscribe", href: "https://youtube.com/example", icon: Youtube, isCompleted: false },
-  { id: '4', title: "Join Discord Server", description: "Become a part of our Discord community.", reward: 75, actionText: "Join Server", href: "https://discord.gg/example", icon: MessageSquare, isCompleted: false },
-  { id: '5', title: "Refer a Friend", description: "Invite friends to earn bonus SOUL. Find your link in Referrals.", reward: 200, actionText: "Go to Referrals", href: "/referrals", icon: Users, isCompleted: false },
+  { id: '1', title: "Follow on X (Twitter)", description: "Follow our official X account for updates.", reward: 100, rewardCurrency: 'GOLD', actionText: "Follow @HustleSoul", href: "https://twitter.com/example", icon: Twitter, isCompleted: false },
+  { id: '2', title: "Join Telegram Channel", description: "Join our Telegram channel for announcements.", reward: 100, rewardCurrency: 'GOLD', actionText: "Join Channel", href: "https://t.me/example", icon: Send, isCompleted: false },
+  { id: '3', title: "Subscribe on YouTube", description: "Subscribe to our YouTube channel for video content.", reward: 50, rewardCurrency: 'GOLD', actionText: "Subscribe", href: "https://youtube.com/example", icon: Youtube, isCompleted: false },
+  { id: '4', title: "Join Discord Server", description: "Become a part of our Discord community.", reward: 75, rewardCurrency: 'GOLD', actionText: "Join Server", href: "https://discord.gg/example", icon: MessageSquare, isCompleted: false },
+  { id: '5', title: "Refer a Friend", description: "Invite friends to earn bonus GOLD. Find your link in Referrals.", reward: 200, rewardCurrency: 'GOLD', actionText: "Go to Referrals", href: "/referrals", icon: Users, isCompleted: false },
 ];
 
 export default function TasksPage() {
@@ -19,7 +20,7 @@ export default function TasksPage() {
   const { toast } = useToast();
 
   const handleCompleteTask = (taskId: string) => {
-    // In a real app, this would involve verification
+    // In a real app, this would involve verification and API call
     setTasks(prevTasks =>
       prevTasks.map(task =>
         task.id === taskId ? { ...task, isCompleted: true } : task
@@ -29,8 +30,9 @@ export default function TasksPage() {
     if (completedTask) {
         toast({
             title: "Task Completed!",
-            description: `You've earned ${completedTask.reward} SOUL for completing "${completedTask.title}".`,
+            description: `You've earned ${completedTask.reward} ${completedTask.rewardCurrency} for completing "${completedTask.title}".`,
         });
+        // TODO: Update user balance via API
     }
   };
 

@@ -1,3 +1,4 @@
+
 import { AppShell } from "@/components/layout/AppShell";
 import { UserBalanceCard } from "@/components/dashboard/UserBalanceCard";
 import { DailyRewardCard } from "@/components/dashboard/DailyRewardCard";
@@ -13,7 +14,7 @@ export default function DashboardPage() {
             Welcome to HustleSoul!
           </h1>
           <p className="text-lg text-muted-foreground">
-            Your hub for earning SOUL tokens. Complete tasks, refer friends, and engage daily.
+            Your hub for earning GOLD & DIAMOND tokens. Complete tasks, refer friends, and engage daily.
           </p>
         </div>
 
@@ -41,7 +42,7 @@ export default function DashboardPage() {
             {/* Example of an announcement item */}
             {/* <div className="mt-4 p-3 bg-primary/10 rounded-md border border-primary/20">
               <h3 className="font-semibold text-primary">New Game Added!</h3>
-              <p className="text-sm text-foreground/80">Check out "Crypto Runner" in the Games section and earn bonus SOUL!</p>
+              <p className="text-sm text-foreground/80">Check out "Crypto Runner" in the Games section and earn bonus GOLD!</p>
             </div> */}
           </CardContent>
         </Card>

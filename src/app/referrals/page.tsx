@@ -1,3 +1,4 @@
+
 'use client';
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -7,10 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Copy, Users, Gift, TrendingUp, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Mock data
+// Mock data - In a real app, this would come from user state/API
 const referralCode = "HUSTLE123XYZ";
 const referralsCount = 15;
-const referralEarnings = 750; // SOUL
+const referralEarnings = 750; // GOLD
 const referredUsers = [
   { name: "UserAlpha", joined: "2024-07-20", earningsFrom: 50 },
   { name: "BetaUser", joined: "2024-07-19", earningsFrom: 50 },
@@ -35,7 +36,7 @@ export default function ReferralsPage() {
           <Share2 className="mx-auto h-16 w-16 text-primary mb-4" />
           <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">Referral Program</h1>
           <p className="text-lg text-muted-foreground">
-            Invite friends to HustleSoul and earn SOUL tokens for each successful referral!
+            Invite friends to HustleSoul and earn GOLD tokens for each successful referral!
           </p>
         </div>
 
@@ -76,7 +77,7 @@ export default function ReferralsPage() {
               <TrendingUp className="h-5 w-5 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="font-headline text-3xl font-bold text-foreground">{referralEarnings} SOUL</div>
+              <div className="font-headline text-3xl font-bold text-foreground">{referralEarnings} GOLD</div>
               <p className="text-xs text-muted-foreground">earned from referrals</p>
             </CardContent>
           </Card>
@@ -96,7 +97,7 @@ export default function ReferralsPage() {
                       <p className="font-semibold text-foreground">{user.name}</p>
                       <p className="text-xs text-muted-foreground">Joined: {user.joined}</p>
                     </div>
-                    <span className="text-sm font-medium text-green-500">+{user.earningsFrom} SOUL</span>
+                    <span className="text-sm font-medium text-green-500">+{user.earningsFrom} GOLD</span>
                   </li>
                 ))}
               </ul>

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -14,6 +15,7 @@ export default function AdsPage() {
   const [adProgress, setAdProgress] = useState(0);
   const [rewardClaimed, setRewardClaimed] = useState(false);
   const { toast } = useToast();
+  const adRewardAmount = 20; // Define reward amount
 
   const handleWatchAd = () => {
     setIsWatchingAd(true);
@@ -25,20 +27,19 @@ export default function AdsPage() {
       setAdProgress(progress);
       if (progress >= 100) {
         clearInterval(interval);
-        // setIsWatchingAd(false); // Keep ad visible until claim
       }
     }, 1000);
   };
 
   const handleClaimReward = () => {
     setRewardClaimed(true);
-    setIsWatchingAd(false); // Hide ad after claim
+    setIsWatchingAd(false); 
     setAdProgress(0);
     toast({
         title: "Reward Claimed!",
-        description: "You've earned 20 SOUL for watching an ad.",
+        description: `You've earned ${adRewardAmount} GOLD for watching an ad.`,
     });
-    // TODO: Add logic to update user's SOUL balance
+    // TODO: Add logic to update user's GOLD balance via API
   };
 
   return (
@@ -48,7 +49,7 @@ export default function AdsPage() {
           <PlaySquare className="mx-auto h-16 w-16 text-primary mb-4" />
           <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">Watch & Earn</h1>
           <p className="text-lg text-muted-foreground">
-            Watch short advertisements to earn HustleSoul tokens.
+            Watch short advertisements to earn HustleSoul GOLD tokens.
           </p>
         </div>
 
@@ -56,14 +57,13 @@ export default function AdsPage() {
           <CardHeader>
             <CardTitle className="font-headline text-xl text-foreground">Current Ad Opportunity</CardTitle>
             <CardDescription className="text-muted-foreground">
-              {rewardClaimed ? "You've claimed your reward for this ad." : isWatchingAd && adProgress < 100 ? "Ad playing..." : "Watch an ad to earn 20 SOUL."}
+              {rewardClaimed ? "You've claimed your reward for this ad." : isWatchingAd && adProgress < 100 ? "Ad playing..." : `Watch an ad to earn ${adRewardAmount} GOLD.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {isWatchingAd ? (
               <div className="space-y-4">
                 <div className="aspect-video bg-muted rounded-lg overflow-hidden flex items-center justify-center">
-                  {/* Placeholder for ad content. In a real scenario, an ad SDK would render here. */}
                   <Image src="https://placehold.co/1280x720.png?text=Ad+Playing" alt="Advertisement" width={1280} height={720} data-ai-hint="advertisement video" />
                 </div>
                 <Progress value={adProgress} className="w-full" />
@@ -86,7 +86,7 @@ export default function AdsPage() {
           <CardFooter>
             {isWatchingAd && adProgress >= 100 && !rewardClaimed ? (
               <Button onClick={handleClaimReward} className="w-full" size="lg">
-                <Gift className="mr-2 h-5 w-5" /> Claim 20 SOUL
+                <Gift className="mr-2 h-5 w-5" /> Claim {adRewardAmount} GOLD
               </Button>
             ) : !isWatchingAd && !rewardClaimed ? (
               <Button onClick={handleWatchAd} className="w-full animate-pulse-glow" size="lg">

@@ -1,3 +1,4 @@
+
 import type { OptimizeAirdropAmountOutput } from '@/ai/flows/optimize-airdrop-amount';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle, TrendingUp, Users, ListChecks } from 'lucide-react';
@@ -22,7 +23,7 @@ export function RewardOptimizerResults({ results }: RewardOptimizerResultsProps)
           <CheckCircle className="h-7 w-7 text-green-500" /> Optimization Results
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          AI-powered suggestions for your HustleSoul airdrop strategy.
+          AI-powered suggestions for your HustleSoul airdrop strategy. (Amounts in GOLD)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -33,7 +34,7 @@ export function RewardOptimizerResults({ results }: RewardOptimizerResultsProps)
                 <item.icon className="h-5 w-5 text-primary" />
                 <h4 className="text-sm font-semibold text-muted-foreground">{item.label}</h4>
               </div>
-              <p className="font-headline text-2xl font-bold text-foreground">{item.value.toLocaleString()} SOUL</p>
+              <p className="font-headline text-2xl font-bold text-foreground">{item.value.toLocaleString()} GOLD</p>
             </Card>
           ))}
         </div>
@@ -41,9 +42,11 @@ export function RewardOptimizerResults({ results }: RewardOptimizerResultsProps)
         <div>
           <h4 className="font-semibold text-lg text-foreground mb-2">Analysis:</h4>
           <div className="prose prose-sm prose-invert max-w-none p-4 bg-muted/50 rounded-md text-foreground/90">
-            {analysis.split('\n').map((paragraph, index) => (
-              <p key={index}>{paragraph}</p>
-            ))}
+            {analysis.split('\\n').map((paragraph, index) => ( // Handle escaped newlines if Genkit returns them
+              paragraph.split('\n').map((subParagraph, subIndex) => ( // Also handle regular newlines
+                <p key={`${index}-${subIndex}`}>{subParagraph}</p>
+              ))
+            )).flat()}
           </div>
         </div>
       </CardContent>

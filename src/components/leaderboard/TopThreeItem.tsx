@@ -1,3 +1,4 @@
+
 import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
 import { CrownIcon } from "@/components/icons/CrownIcon";
@@ -8,6 +9,8 @@ interface TopThreeItemProps {
   name: string;
   score: number;
   avatarUrl: string;
+  dataAiHint?: string;
+  currency?: string;
 }
 
 const rankStyles = {
@@ -40,7 +43,7 @@ const rankStyles = {
   },
 };
 
-export function TopThreeItem({ rank, name, score, avatarUrl }: TopThreeItemProps) {
+export function TopThreeItem({ rank, name, score, avatarUrl, dataAiHint = "avatar person", currency = "GOLD" }: TopThreeItemProps) {
   const styles = rankStyles[rank];
 
   return (
@@ -48,16 +51,16 @@ export function TopThreeItem({ rank, name, score, avatarUrl }: TopThreeItemProps
       "relative flex flex-col items-center p-4 md:p-6 text-center shadow-2xl transition-all duration-300 transform hover:scale-105",
       styles.borderColor,
       styles.bgColor,
-      rank === 1 ? "md:-translate-y-8" : "md:mt-4" // Elevate 1st place more on md+
+      rank === 1 ? "md:-translate-y-8" : "md:mt-4" 
     )}>
       <div className="absolute -top-3 left-1/2 -translate-x-1/2">
         <CrownIcon className={cn("w-8 h-8 md:w-10 md:h-10", styles.crownColor)} />
       </div>
       <div className={cn("relative rounded-full overflow-hidden border-4", styles.borderColor, styles.size, "mb-3 md:mb-4")}>
-        <Image src={avatarUrl} alt={name} layout="fill" objectFit="cover" data-ai-hint="avatar person" />
+        <Image src={avatarUrl} alt={name} layout="fill" objectFit="cover" data-ai-hint={dataAiHint} />
       </div>
       <h3 className={cn("font-headline font-bold", styles.textColor, styles.textSize)}>{name}</h3>
-      <p className={cn("font-semibold", styles.textColor, styles.scoreSize)}>{score.toLocaleString()} SOUL</p>
+      <p className={cn("font-semibold", styles.textColor, styles.scoreSize)}>{score.toLocaleString()} {currency}</p>
       <div className={cn("absolute -bottom-3 -right-3 rounded-full bg-primary text-primary-foreground font-bold text-lg w-10 h-10 flex items-center justify-center shadow-lg", styles.textSize, styles.crownColor)}>
         {rank}
       </div>

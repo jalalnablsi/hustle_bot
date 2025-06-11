@@ -1,9 +1,43 @@
+
+'use client';
 import Link from 'next/link';
-import { Coins } from 'lucide-react';
+import { Coins, Gem } from 'lucide-react';
+import type { AppUser } from '@/app/types';
+import { useEffect, useState } from 'react';
 
 export function Header() {
-  // Mock user points
-  const userPoints = 1250;
+  const [user, setUser] = useState<AppUser | null>(null);
+
+  useEffect(() => {
+    // Attempt to fetch user data if needed, or use a global state
+    // For now, this is a placeholder. A proper app would use a context or fetch.
+    const fetchUserData = async () => {
+        try {
+            const response = await fetch('/api/auth/me'); // Example endpoint
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setUser(data.user);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch user for header", error);
+        }
+    };
+    fetchUserData();
+
+    const handleUserUpdate = (event: Event) => {
+        const customEvent = event as CustomEvent<AppUser>;
+        setUser(customEvent.detail);
+    };
+    window.addEventListener('userUpdated_nofreetalk', handleUserUpdate);
+    return () => {
+        window.removeEventListener('userUpdated_nofreetalk', handleUserUpdate);
+    };
+  }, []);
+
+  const goldPoints = user?.gold_points ?? 0;
+  const diamondPoints = user?.diamond_points ?? 0;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -14,9 +48,15 @@ export function Header() {
           </svg>
           <span className="font-headline text-2xl font-bold text-foreground">HustleSoul</span>
         </Link>
-        <div className="flex items-center space-x-2 rounded-full bg-card px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-md">
-          <Coins className="h-5 w-5 text-yellow-400" />
-          <span>{userPoints.toLocaleString()} SOUL</span>
+        <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1 rounded-full bg-card px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm">
+              <Coins className="h-5 w-5 text-yellow-400" />
+              <span>{goldPoints.toLocaleString()} GOLD</span>
+            </div>
+            <div className="flex items-center space-x-1 rounded-full bg-card px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm">
+              <Gem className="h-5 w-5 text-sky-400" />
+              <span>{diamondPoints.toLocaleString()}</span>
+            </div>
         </div>
       </div>
     </header>
