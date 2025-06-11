@@ -1,17 +1,18 @@
+
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ListChecks, Users, Trophy, Gamepad2, Cog } from 'lucide-react';
+import { Home, ListChecks, Users, Trophy, Gamepad2, Gift } from 'lucide-react'; // Added Gift
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/tasks', label: 'Tasks', icon: ListChecks },
   { href: '/referrals', label: 'Referrals', icon: Users },
+  { href: '/wheel', label: 'Wheel', icon: Gift }, // Added Wheel
   { href: '/leaderboard', label: 'Leaders', icon: Trophy },
   { href: '/games', label: 'Games', icon: Gamepad2 },
-  // { href: '/rewards/optimizer', label: 'Optimizer', icon: Cog } // Consider if this belongs in main nav
 ];
 
 export function BottomNav() {
@@ -19,7 +20,7 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
-      <div className="mx-auto grid h-16 max-w-md grid-cols-5 items-center px-2">
+      <div className="mx-auto grid h-16 max-w-md grid-cols-6 items-center px-2"> {/* Updated to grid-cols-6 */}
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -31,8 +32,8 @@ export function BottomNav() {
                 isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <item.icon className={cn('h-6 w-6', isActive ? 'fill-primary stroke-primary-foreground' : '')} />
-              <span className="text-xs">{item.label}</span>
+              <item.icon className={cn('h-5 w-5 sm:h-6 sm:w-6', isActive && item.href === '/wheel' ? 'fill-primary stroke-primary-foreground' : isActive ? 'text-primary' : '')} />
+              <span className="text-xs truncate">{item.label}</span>
             </Link>
           );
         })}

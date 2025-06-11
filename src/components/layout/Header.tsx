@@ -3,38 +3,102 @@
 import Link from 'next/link';
 import { Coins, Gem } from 'lucide-react';
 import type { AppUser } from '@/app/types';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react'; // Added useCallback
+import { useToast } from "@/hooks/use-toast"; // Added for test login messages
 
 export function Header() {
   const [user, setUser] = useState<AppUser | null>(null);
+  const { toast } = useToast(); // For test login messages
+
+  const fetchUserData = useCallback(async (isAfterTestLoginAttempt = false) => {
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user) {
+          setUser(data.user);
+           // Dispatch event for other components like UserBalanceCard
+          window.dispatchEvent(new CustomEvent<AppUser>('userUpdated_nofreetalk', { detail: data.user }));
+          return data.user; // Return user data
+        }
+      }
+      // If response not ok or data.success is false
+      if (!isAfterTestLoginAttempt) { // Only attempt test login if this isn't already a call after a test login
+        return null; // Indicate user not found, to trigger test login
+      }
+      setUser(null); // Explicitly set user to null if auth failed after test attempt
+      window.dispatchEvent(new CustomEvent<AppUser | null>('userUpdated_nofreetalk', { detail: null }));
+
+
+    } catch (error) {
+      console.error("Failed to fetch user for header", error);
+      if (!isAfterTestLoginAttempt) {
+        return null; // Indicate error, to trigger test login
+      }
+      setUser(null);
+      window.dispatchEvent(new CustomEvent<AppUser | null>('userUpdated_nofreetalk', { detail: null }));
+    }
+    return undefined; // Fallback
+  }, []);
+
 
   useEffect(() => {
-    // Attempt to fetch user data if needed, or use a global state
-    // For now, this is a placeholder. A proper app would use a context or fetch.
-    const fetchUserData = async () => {
-        try {
-            const response = await fetch('/api/auth/me'); // Example endpoint
-            if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
-                    setUser(data.user);
-                }
-            }
-        } catch (error) {
-            console.error("Failed to fetch user for header", error);
+    const TEST_TELEGRAM_ID = "7777";
+    const TEST_FIRST_NAME = "TestDev";
+    const TEST_LAST_NAME = "User";
+    const TEST_USERNAME = "testdev7777";
+
+    const performTestLoginAndFetch = async () => {
+      try {
+        console.log("Attempting test login for Telegram ID:", TEST_TELEGRAM_ID);
+        // toast({ title: "Dev Mode", description: `Attempting login for TG ID: ${TEST_TELEGRAM_ID}`});
+        const loginResponse = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            telegramId: TEST_TELEGRAM_ID,
+            firstName: TEST_FIRST_NAME,
+            lastName: TEST_LAST_NAME,
+            username: TEST_USERNAME,
+          }),
+        });
+        const loginData = await loginResponse.json();
+        if (loginData.success) {
+          console.log("Test login successful, new user:", loginData.isNewUser);
+          // toast({ title: "Dev Login Success", description: `Logged in as ${TEST_FIRST_NAME}. New user: ${loginData.isNewUser}`});
+          await fetchUserData(true); // Fetch user data again, marking it's after a test login attempt
+        } else {
+          console.error("Test login failed:", loginData.error);
+          toast({ title: "Dev Login Failed", description: loginData.error, variant: "destructive"});
+          setUser(null); // Ensure user is null if test login fails
+          window.dispatchEvent(new CustomEvent<AppUser | null>('userUpdated_nofreetalk', { detail: null }));
         }
+      } catch (error) {
+        console.error("Error during test login:", error);
+        toast({ title: "Dev Login Error", description: (error as Error).message, variant: "destructive"});
+        setUser(null);
+        window.dispatchEvent(new CustomEvent<AppUser | null>('userUpdated_nofreetalk', { detail: null }));
+      }
     };
-    fetchUserData();
+
+    const initializeUserSession = async () => {
+      const currentUser = await fetchUserData(false); // Initial fetch
+      if (currentUser === null) { // User not found or error, try test login
+        await performTestLoginAndFetch();
+      }
+    };
+
+    initializeUserSession();
 
     const handleUserUpdate = (event: Event) => {
-        const customEvent = event as CustomEvent<AppUser>;
-        setUser(customEvent.detail);
+      const customEvent = event as CustomEvent<AppUser>;
+      setUser(customEvent.detail);
     };
     window.addEventListener('userUpdated_nofreetalk', handleUserUpdate);
     return () => {
-        window.removeEventListener('userUpdated_nofreetalk', handleUserUpdate);
+      window.removeEventListener('userUpdated_nofreetalk', handleUserUpdate);
     };
-  }, []);
+  }, [fetchUserData, toast]);
 
   const goldPoints = user?.gold_points ?? 0;
   const diamondPoints = user?.diamond_points ?? 0;
