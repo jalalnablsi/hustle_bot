@@ -11,7 +11,7 @@ export default {
     extend: {
       fontFamily: {
         body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
+        headline: ['"Space Grotesk"', 'sans-serif'], // Added Space Grotesk
         code: ['monospace'],
       },
       colors: {
@@ -66,7 +66,7 @@ export default {
           ring: 'hsl(var(--sidebar-ring))',
         },
       },
-      borderRadius: {
+      borderRadius: { // Updated border radius
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
@@ -88,10 +88,20 @@ export default {
             height: '0',
           },
         },
+        'spin- медленно': { // slow spin for wheel
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+         'pulse-glow': {
+          '0%, 100%': { opacity: '1', boxShadow: '0 0 5px hsl(var(--primary))' },
+          '50%': { opacity: '0.7', boxShadow: '0 0 20px hsl(var(--primary))' },
+        }
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'spin-slow': 'spin-slow 3s linear infinite', // Added slow spin animation
+        'pulse-glow': 'pulse-glow 2s infinite ease-in-out',
       },
     },
   },
