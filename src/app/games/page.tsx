@@ -1,10 +1,14 @@
 
 import { AppShell } from "@/components/layout/AppShell";
-import { Gamepad2 } from "lucide-react";
-import { TowerBuilderGamePlaceholder } from "@/components/games/TowerBuilderGamePlaceholder";
+import { Gamepad2, Layers } from "lucide-react"; // Added Layers for SkyHighStacker
 import { QuickTapGamePlaceholder } from "@/components/games/QuickTapGamePlaceholder";
 import { BallJumpGamePlaceholder } from "@/components/games/BallJumpGamePlaceholder";
 import { Game2048Placeholder } from "@/components/games/Game2048Placeholder";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import Link from 'next/link';
+import Image from 'next/image';
+
 
 export default function GamesPage() {
   return (
@@ -22,17 +26,43 @@ export default function GamesPage() {
         <section className="mb-12">
           <h2 className="font-headline text-2xl md:text-3xl font-semibold text-center text-primary mb-8">Our Games</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-            <TowerBuilderGamePlaceholder />
+            {/* Sky High Stacker Card - Links to new page */}
+            <Card className="shadow-lg hover:shadow-primary/40 transition-shadow duration-300 flex flex-col">
+              <CardHeader>
+                <div className="flex items-center gap-3 mb-2">
+                  <Layers className="h-8 w-8 text-primary flex-shrink-0" />
+                  <CardTitle className="font-headline text-xl text-foreground">Sky High Stacker</CardTitle>
+                </div>
+                <CardDescription className="text-sm text-muted-foreground h-12 overflow-hidden">
+                  Stack blocks precisely! Tap to drop the moving block. Perfect stacks earn GOLD, streaks earn DIAMONDS.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow flex flex-col items-center justify-center">
+                <div className="w-full aspect-video bg-muted rounded-md mb-4 overflow-hidden relative">
+                  <Image 
+                    src="https://placehold.co/600x400.png?text=Sky+High+Stacker" 
+                    alt="Sky High Stacker Game" 
+                    layout="fill" 
+                    objectFit="cover" 
+                    data-ai-hint="stacking blocks tower game" 
+                  />
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Link href="/games/sky-high-stacker" passHref className="w-full">
+                  <Button asChild size="lg" className="w-full">
+                    <a>Play Game</a>
+                  </Button>
+                </Link>
+              </CardFooter>
+            </Card>
+
             <QuickTapGamePlaceholder />
             <BallJumpGamePlaceholder />
             <Game2048Placeholder />
           </div>
         </section>
 
-        {/* Game Hub has been removed from here as per your request. 
-            Please let me know where you'd like to place the Game Hub (e.g., as a side button or in different navigation)
-            and I can help implement that.
-        */}
       </div>
     </AppShell>
   );
