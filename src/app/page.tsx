@@ -12,14 +12,18 @@ import type { AppUser } from "@/app/types";
 import { Coins, Gem, PartyPopper, Users } from "lucide-react";
 
 interface TelegramWebAppUser {
-  id: number; // Telegram IDs are numbers
+  id: number;
   first_name: string;
   last_name?: string;
   username?: string;
+  is_bot?: boolean;
+  language_code?: string;
+  photo_url?: string;
 }
 
 const WELCOME_BONUS_GOLD = 100;
 const WELCOME_BONUS_DIAMONDS = 1;
+
 export default function DashboardPage() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,26 +38,47 @@ export default function DashboardPage() {
       }
 
       let tgUser: TelegramWebAppUser | null = null;
+      let referrerId: string | null = null;
 
       if ((window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
         tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user as TelegramWebAppUser;
+        const startParam = (window as any).Telegram.WebApp.initDataUnsafe.start_param;
+        if (startParam) {
+            referrerId = startParam;
+            localStorage.setItem('hustlesoul_referrer_id', referrerId); // Store for potential later use if login flow is complex
+            console.log('Referrer ID from Telegram start_param:', referrerId);
+        }
       } else {
         const storedMockIdStr = localStorage.getItem('mockTelegramUserId_hustlesoul');
-        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : 7777; // Default mock Telegram ID
+        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : 7777777; // Consistent Mock Telegram ID for testing
 
         tgUser = {
           id: mockId,
-          first_name: 'DevUser',
+          first_name: 'DevSoul',
           username: `devsoul${mockId}`,
         };
         console.warn("Telegram WebApp not found or no user data, using mock Telegram user:", tgUser);
         if (!storedMockIdStr) {
             localStorage.setItem('mockTelegramUserId_hustlesoul', mockId.toString());
         }
+        // Check for referrer in URL for mock environment
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlReferrerId = urlParams.get('start');
+        if (urlReferrerId) {
+            referrerId = urlReferrerId;
+            localStorage.setItem('hustlesoul_referrer_id', referrerId);
+            console.log('Referrer ID from URL (mock env):', referrerId);
+        }
+      }
+      
+      // If not found in start_param or URL, check localStorage (e.g. from previous visit)
+      if (!referrerId) {
+        referrerId = localStorage.getItem('hustlesoul_referrer_id');
       }
 
+
       if (tgUser) {
-        await fetchUserFromBackend(tgUser);
+        await fetchUserFromBackend(tgUser, referrerId);
       } else {
         setLoading(false);
         setCurrentUser(null);
@@ -79,7 +104,7 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchUserFromBackend = async (tgUser: TelegramWebAppUser) => {
+  const fetchUserFromBackend = async (tgUser: TelegramWebAppUser, referrerTelegramId: string | null) => {
     try {
       const response = await fetch('/api/login', {
         method: 'POST',
@@ -89,25 +114,13 @@ export default function DashboardPage() {
           firstName: tgUser.first_name,
           lastName: tgUser.last_name,
           username: tgUser.username,
+          referrerTelegramId: referrerTelegramId, // Send referrer ID to backend
         }),
       });
 
       if (!response.ok) {
         let errorBody = `API request failed with status ${response.status}: ${response.statusText}`;
-        try {
-          const errorData = await response.json();
-          if (errorData && errorData.error) {
-            errorBody = errorData.error;
-          }
-        } catch (e) {
-          try {
-            const textError = await response.text();
-            console.error("API error response (not JSON):", textError);
-            errorBody = `API request failed with status ${response.status}. Server response: ${textError.substring(0, 100)}...`;
-          } catch (readError) {
-            console.error("Failed to read API error response text:", readError);
-          }
-        }
+        try { const errorData = await response.json(); if (errorData && errorData.error) errorBody = errorData.error; } catch (e) {/* ignore */}
         throw new Error(errorBody);
       }
 
@@ -116,6 +129,7 @@ export default function DashboardPage() {
       if (data.success && data.user) {
         const fetchedUser = data.user as AppUser;
         const isNewUser = data.isNewUser;
+        const referralBonusApplied = data.referralBonusApplied; // Check if backend applied bonus
 
         const validatedUser: AppUser = {
           ...fetchedUser,
@@ -137,63 +151,39 @@ export default function DashboardPage() {
           last_daily_reward_claim_at: fetchedUser.last_daily_reward_claim_at || null,
         };
 
-
         if (isNewUser) {
-          validatedUser.gold_points += WELCOME_BONUS_GOLD;
-          validatedUser.diamond_points += WELCOME_BONUS_DIAMONDS;
-
-          // 1. التحقق مما إذا كان المستخدم انضم عبر رابط إحالة
-          const referrerIdFromLocalStorage = localStorage.getItem('referrer_id');
-
-          if (referrerIdFromLocalStorage) {
-            try {
-              // 2. إرسال طلب تفعيل الإحالة
-              const activateRes = await fetch('/api/referrals/activate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: validatedUser.id }),
-              });
-
-              const activateData = await activateRes.json();
-
-              if (activateData.success) {
-                // 3. تحديث النقاط والمكافآت
-                validatedUser.gold_points = Number(activateData.referred_gold);
-                validatedUser.bonus_spins_available = Number(activateData.referrer_spins);
-
-                toast({
-                  title: 'Referral Activated!',
-                  description: 'You earned extra points for joining via a referral link.',
-                  icon: <Users className="h-6 w-6 text-primary" />,
-                  duration: 5000,
-                });
-              } else {
-                console.warn('Referral activation failed:', activateData.error);
-              }
-            } catch (activationError) {
-              console.error('Error activating referral:', activationError);
-            }
-          }
-
+          // Welcome bonus is now handled by backend during user creation if they are new.
+          // We can show a toast based on isNewUser flag.
           toast({
             title: 'Welcome to HustleSoul!',
             description: (
               <div className="flex flex-col gap-1">
-                <span>You've received a welcome bonus:</span>
+                <span>You've received a welcome bonus!</span>
                 <span className="flex items-center">
-                  <Coins className="h-4 w-4 mr-1 text-yellow-500" /> {WELCOME_BONUS_GOLD} Gold
+                  <Coins className="h-4 w-4 mr-1 text-yellow-500" /> {data.welcomeBonusGold || WELCOME_BONUS_GOLD} Gold
                 </span>
                 <span className="flex items-center">
-                  <Gem className="h-4 w-4 mr-1 text-sky-400" /> {WELCOME_BONUS_DIAMONDS} Diamond
+                  <Gem className="h-4 w-4 mr-1 text-sky-400" /> {data.welcomeBonusDiamonds || WELCOME_BONUS_DIAMONDS} Diamond
                 </span>
               </div>
             ),
             icon: <PartyPopper className="h-6 w-6 text-primary" />,
             duration: 7000,
           });
+
+          if (referralBonusApplied) {
+             toast({
+                title: 'Referral Bonus!',
+                description: `You also received a bonus for joining via a referral! Gold: +${data.referralBonusGold}, Spins: +${data.referralBonusSpins}`,
+                icon: <Users className="h-6 w-6 text-primary" />,
+                duration: 6000,
+             });
+             localStorage.removeItem('hustlesoul_referrer_id'); // Clear after successful application
+          }
+
         }
         setCurrentUser(validatedUser);
-         window.dispatchEvent(new CustomEvent<AppUser>('userUpdated_hustlesoul', { detail: validatedUser }));
+        window.dispatchEvent(new CustomEvent<AppUser>('userUpdated_hustlesoul', { detail: validatedUser }));
       } else {
         throw new Error(data.error || 'Failed to process user data from API');
       }
@@ -211,9 +201,9 @@ export default function DashboardPage() {
           first_name: 'DevUser (Offline)',
           last_name: 'Fallback',
           username: `devsoul_offline_${mockTelegramIdForFallback}`,
-          gold_points: 500, diamond_points: 0.5000, purple_gem_points: 1.000, blue_gem_points: 0,
+          gold_points: 500, diamond_points: 5, purple_gem_points: 1, blue_gem_points: 0,
           referral_link: `https://t.me/HustleSoulBot?start=${mockTelegramIdForFallback}`,
-          referrals_made: 2, initial_free_spin_used: true, ad_spins_used_today_count: 0, bonus_spins_available: 1,
+          referrals_made: 2, initial_free_spin_used: false, ad_spins_used_today_count: 0, bonus_spins_available: 1,
           last_login: new Date().toISOString(), created_at: new Date().toISOString(),
           daily_reward_streak: 1, last_daily_reward_claim_at: null,
       });
@@ -222,12 +212,13 @@ export default function DashboardPage() {
     }
   };
 
+
   return (
     <AppShell>
       <div className="container mx-auto px-4 py-8 space-y-8">
         <div>
-          <h1 className="font-headline text-4xl font-bold text-foreground mb-2">
-            Welcome to HustleSoul!
+          <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">
+            Welcome to HustleSoul{currentUser?.first_name ? `, ${currentUser.first_name}` : ''}!
           </h1>
           <p className="text-lg text-muted-foreground">
             Your hub for earning GOLD & DIAMOND tokens. Complete tasks, refer friends, and engage daily.
@@ -248,18 +239,13 @@ export default function DashboardPage() {
           <QuickActionGrid />
         </div>
 
-        <Card className="mt-8 bg-card/50">
+        <Card className="mt-8 bg-card/70">
           <CardHeader>
             <CardTitle className="font-headline text-xl">Announcements</CardTitle>
             <CardDescription>Latest updates from the HustleSoul team.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">No new announcements right now. Stay tuned!</p>
-            {/* Example of an announcement item */}
-            {/* <div className="mt-4 p-3 bg-primary/10 rounded-md border border-primary/20">
-              <h3 className="font-semibold text-primary">New Game Added!</h3>
-              <p className="text-sm text-foreground/80">Check out "Crypto Runner" in the Games section and earn bonus GOLD!</p>
-            </div> */}
+            <p className="text-muted-foreground">No new announcements right now. Check back soon for exciting news & events!</p>
           </CardContent>
         </Card>
 
@@ -267,3 +253,4 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
+

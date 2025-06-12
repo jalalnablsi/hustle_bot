@@ -72,7 +72,7 @@ export default function WheelPage() {
             blue_gem_points: Number(data.user.blue_gem_points) || 0,
             referrals_made: Number(data.user.referrals_made) || 0,
             initial_free_spin_used: Boolean(data.user.initial_free_spin_used),
-            ad_spins_used_today_count: Number(data.user.ad_spins_used_today_count || data.user.ad_views_today_count) || 0, // Use ad_spins_used_today_count if available, else ad_views_today_count
+            ad_spins_used_today_count: Number(data.user.ad_spins_used_today_count) || 0,
             bonus_spins_available: Number(data.user.bonus_spins_available) || 0,
             daily_ad_views_limit: Number(data.user.daily_ad_views_limit) || 3,
             daily_reward_streak: Number(data.user.daily_reward_streak) || 0,
@@ -88,7 +88,7 @@ export default function WheelPage() {
     } catch (error) {
       console.error('Error fetching user for wheel:', error);
       setCurrentUser(null);
-      // toast({ title: 'Profile Sync Error', description: (error as Error).message || 'Could not load your profile.', variant: 'destructive' });
+      toast({ title: 'Profile Sync Error', description: (error as Error).message || 'Could not load your profile.', variant: 'destructive' });
     } finally {
       setIsLoadingUser(false);
     }
@@ -115,8 +115,8 @@ export default function WheelPage() {
     }
 
     setIsBackendProcessing(true);
-    lastWonPrizeRef.current = null; 
-    setTargetPrizeIndexForWheel(null); 
+    lastWonPrizeRef.current = null; // Reset last won prize display
+    setTargetPrizeIndexForWheel(null); // Reset target index before new spin
     
     try {
       const response = await fetch('/api/wheel/spin', {
@@ -127,11 +127,13 @@ export default function WheelPage() {
       const data = await response.json();
 
       if (response.ok && data.success && typeof data.prizeIndex === 'number') {
-        await fetchUser(); 
-        setIsWheelSpinningVisually(true); 
-        setTargetPrizeIndexForWheel(data.prizeIndex); 
+        await fetchUser(); // Fetch updated user data (spinsLeft, points)
+        setIsWheelSpinningVisually(true); // Signal that visual spin should start
+        setTargetPrizeIndexForWheel(data.prizeIndex); // This will trigger the wheel component to spin
+        // isBackendProcessing remains true until animation ends in onSpinAnimationEnd
       } else {
-        await fetchUser(); 
+        // If API fails or returns invalid prizeIndex, reset states
+        await fetchUser(); // Still fetch user to get latest spin count
         setIsWheelSpinningVisually(false);
         setIsBackendProcessing(false);
         throw new Error(data.error || 'Failed to spin the wheel. Server did not return a valid prize index.');
@@ -141,13 +143,14 @@ export default function WheelPage() {
       toast({ title: 'Spin Error', description: (error as Error).message || 'Could not complete spin.', variant: 'destructive' });
       setIsBackendProcessing(false);
       setIsWheelSpinningVisually(false);
-      await fetchUser(); 
+      await fetchUser(); // Ensure user data is synced even on error
     }
   };
   
+  // This is called by ReactWheel when its animation finishes
   const handleSpinAnimationEnd = useCallback((wonPrizeData: { label: string; type: 'gold'|'diamonds'; value?: number; icon: React.ElementType}) => {
     setIsWheelSpinningVisually(false);
-    setIsBackendProcessing(false); 
+    setIsBackendProcessing(false); // Backend processing is done, animation is done
     lastWonPrizeRef.current = wonPrizeData;
 
     toast({
@@ -155,12 +158,13 @@ export default function WheelPage() {
       description: (
         <span className="flex items-center gap-1.5">
           <wonPrizeData.icon className={`h-5 w-5 ${wonPrizeData.type === 'gold' ? 'text-yellow-400' : 'text-sky-400'}`} />
-          {wonPrizeData.label} 
+          {wonPrizeData.label} {/* This label comes from SegmentData in ReactWheel */}
         </span>
       ),
       duration: 4000,
     });
-    fetchUser(); 
+    fetchUser(); // Fetch user again to update points from this spin
+    // No need to setTargetPrizeIndexForWheel(null) here, ReactWheel handles its internal reset visually
   }, [fetchUser, toast]);
   
   useEffect(() => {
@@ -176,13 +180,13 @@ export default function WheelPage() {
     }
     return () => clearInterval(adTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdSimulationOpen, adSimulationCountdown]); 
+  }, [isAdSimulationOpen, adSimulationCountdown]); // Removed handleAdWatchedAndReward from deps
 
   const handleAdWatchedAndReward = async () => {
     if (!currentUser || isLoadingUser) return;    
     try {
-      setIsBackendProcessing(true); 
-      const response = await fetch('/api/ads/view', { // This API needs to be created
+      setIsBackendProcessing(true); // Prevent other actions while processing ad reward
+      const response = await fetch('/api/ads/view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id }),
@@ -190,8 +194,8 @@ export default function WheelPage() {
       const data = await response.json();
       if (response.ok && data.success) {
         toast({ title: 'Spin Earned!', description: 'You got a free spin for watching the ad!', icon: <Gift className="text-primary" /> });
-        await fetchUser(); 
-        setShouldSpinAfterAd(true); 
+        await fetchUser(); // Fetch user to get new spin count BEFORE attempting to spin
+        setShouldSpinAfterAd(true); // Signal to spin after user data is confirmed
       } else {
         toast({ title: 'Ad Reward Error', description: data.error || 'Could not grant spin.', variant: 'destructive' });
         await fetchUser();
@@ -201,29 +205,30 @@ export default function WheelPage() {
       toast({ title: 'Server Error', description: (error as Error).message || 'Failed to process ad reward.', variant: 'destructive' });
       await fetchUser();
     } finally {
-      setIsBackendProcessing(false); 
+      setIsBackendProcessing(false); // Ad reward processing finished
     }
   };
 
+  // Effect to trigger spin after ad, once user data is updated and not busy
   useEffect(() => {
     if (shouldSpinAfterAd && currentUser && !isBackendProcessing && !isWheelSpinningVisually) {
       const initialFreeSpinIsActuallyAvailableAfterAd = !currentUser.initial_free_spin_used;
       const currentSpinsAfterAd = (initialFreeSpinIsActuallyAvailableAfterAd ? 1 : 0) + (currentUser.bonus_spins_available || 0);
       if (currentSpinsAfterAd > 0) {
-        setTimeout(() => { 
+        setTimeout(() => { // Small delay to ensure UI updates from fetchUser are processed
              handleSpinAPI();
         }, 200);
       }
-      setShouldSpinAfterAd(false); 
+      setShouldSpinAfterAd(false); // Reset the flag
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldSpinAfterAd, currentUser, isBackendProcessing, isWheelSpinningVisually]); 
+  }, [shouldSpinAfterAd, currentUser, isBackendProcessing, isWheelSpinningVisually]); // Removed handleSpinAPI from deps
 
   const handleWatchAdButtonClick = () => {
     if (!currentUser || isLoadingUser || isBackendProcessing || isWheelSpinningVisually) return;
     
     const adsWatched = currentUser.ad_spins_used_today_count || 0;
-    const dailyLimit = currentUser.daily_ad_views_limit || 3; 
+    const dailyLimit = currentUser.daily_ad_views_limit || 3; // Default to 3 if not set
 
     if (adsWatched >= dailyLimit) {
       toast({ title: 'Ad Limit Reached', description: `You've watched the maximum ads for today (${adsWatched}/${dailyLimit}).`, variant: 'default' });
@@ -233,6 +238,7 @@ export default function WheelPage() {
     setAdSimulationCountdown(AD_SIMULATION_DURATION_SECONDS);
   };
 
+  // Loading state for the entire page if user data isn't available yet
   if (isLoadingUser && !currentUser) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
@@ -241,17 +247,19 @@ export default function WheelPage() {
     );
   }
 
+  // If user could not be loaded at all
   if (!currentUser && !isLoadingUser) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center p-4">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">User Not Found</h2>
-        <p className="text-muted-foreground mb-4">Could not load your profile. Please try refreshing or ensure you are logged in. Test login might be in progress.</p>
+        <p className="text-muted-foreground mb-4">Could not load your profile. Please try refreshing or ensure you are logged in.</p>
         <Button onClick={() => fetchUser(true)}><RefreshCw className="mr-2 h-4 w-4" /> Try Again</Button>
       </div>
     );
   }
   
+  // Calculate spins available for display
   const initialFreeSpinIsAvailableForDisplay = !currentUser.initial_free_spin_used;
   const spinsAvailableForDisplay = (initialFreeSpinIsAvailableForDisplay ? 1 : 0) + (currentUser.bonus_spins_available || 0);
   const adsWatchedToday = currentUser.ad_spins_used_today_count || 0;
@@ -270,21 +278,15 @@ export default function WheelPage() {
         </CardHeader>
 
         <CardContent className="pt-6 pb-8 px-2 sm:px-4 space-y-6 flex flex-col items-center">
-          {/* ReactWheel component will be rendered here. Ensure src/components/wheel/ReactWheel.tsx exists. */}
-          {typeof ReactWheel !== 'undefined' ? (
-            <ReactWheel
-              fixedWheelSize={460} 
-              segmentsConfig={BACKEND_WHEEL_PRIZES_CONFIG_FOR_PAGE}
-              targetPrizeIndex={targetPrizeIndexForWheel}
-              isWheelSpinningVisually={isWheelSpinningVisually}
-              onSpinAnimationEnd={handleSpinAnimationEnd}
-              onWheelClick={handleSpinAPI} 
-            />
-          ) : (
-            <div className="h-[460px] w-[460px] flex items-center justify-center bg-muted rounded-full">
-              <p className="text-muted-foreground">Wheel component loading or missing...</p>
-            </div>
-          )}
+          {/* Use the new ReactWheel component */}
+          <ReactWheel
+            fixedWheelSize={460} // Consistent large size
+            segmentsConfig={BACKEND_WHEEL_PRIZES_CONFIG_FOR_PAGE}
+            targetPrizeIndex={targetPrizeIndexForWheel}
+            isWheelSpinningVisually={isWheelSpinningVisually}
+            onSpinAnimationEnd={handleSpinAnimationEnd}
+            onWheelClick={handleSpinAPI} // Allow clicking wheel to spin
+          />
           
           <div className="text-center space-y-2 mt-6 w-full">
             {lastWonPrizeRef.current && !isWheelSpinningVisually && (
@@ -305,13 +307,13 @@ export default function WheelPage() {
                "No bonus spins currently."}
             </p>
              <p className="text-xs text-muted-foreground">
-              Ads Watched Today for Spins: {adsWatchedToday} / {dailyAdViewLimit}
+              Ads Watched Today: {adsWatchedToday} / {dailyAdViewLimit}
             </p>
           </div>
         </CardContent>
          <CardFooter className="bg-muted/30 p-4 flex flex-col items-center gap-3 border-t border-primary/20">
            <Button
-            onClick={handleSpinAPI} 
+            onClick={handleSpinAPI} // Main spin button below the wheel
             variant="default"
             className="w-full max-w-xs bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 py-3 text-lg rounded-lg shadow-lg transform hover:scale-105 transition-transform"
             disabled={isLoadingUser || isBackendProcessing || isWheelSpinningVisually || spinsAvailableForDisplay <= 0}
@@ -334,7 +336,7 @@ export default function WheelPage() {
           </Button>
           
           <Link href="/referrals" passHref className="w-full max-w-xs">
-            <Button variant="secondary" className="w-full py-3 text-base" disabled={!currentUser || !currentUser.referral_link}>
+            <Button variant="secondary" className="w-full py-3 text-base" disabled={!currentUser.referral_link}>
               <Users className="mr-2 h-5 w-5" /> Invite Friends & Earn More
             </Button>
           </Link>
@@ -347,7 +349,8 @@ export default function WheelPage() {
         </CardFooter>
       </Card>
 
-      <Dialog open={isAdSimulationOpen} onOpenChange={(open) => { if (!open && adSimulationCountdown > 0) {setIsAdSimulationOpen(false); setAdSimulationCountdown(AD_SIMULATION_DURATION_SECONDS); setIsBackendProcessing(false); }}} >
+      {/* Ad Simulation Dialog */}
+      <Dialog open={isAdSimulationOpen} onOpenChange={(open) => { if (!open && adSimulationCountdown > 0) {setIsAdSimulationOpen(false); setAdSimulationCountdown(AD_SIMULATION_DURATION_SECONDS); setIsBackendProcessing(false); /* Allow other actions if ad closed early */ }}} >
         <DialogContent className="sm:max-w-md bg-card/95 backdrop-blur-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Tv className="text-primary"/> Simulated Ad</DialogTitle>
@@ -357,7 +360,7 @@ export default function WheelPage() {
           </DialogHeader>
           <div className="py-6 text-center space-y-3">
              <Image 
-                src="https://placehold.co/300x150.png?text=Ad+Playing..." 
+                src="https://placehold.co/300x150/1E90FF/FFFFFF.png?text=Ad+Playing..." 
                 alt="Simulated Ad" width={300} height={150} data-ai-hint="advertisement video player"
                 className="mx-auto rounded-md shadow-lg border"
               />
@@ -373,3 +376,4 @@ export default function WheelPage() {
     </div>
   );
 }
+    

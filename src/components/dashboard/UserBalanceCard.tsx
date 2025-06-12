@@ -9,7 +9,6 @@ export function UserBalanceCard() {
   const [user, setUser] = useState<AppUser | null>(null);
 
   useEffect(() => {
-    // Placeholder: Fetch user data or use a global context
      const fetchUserData = async () => {
         try {
             const response = await fetch('/api/auth/me');
@@ -33,9 +32,9 @@ export function UserBalanceCard() {
         const customEvent = event as CustomEvent<AppUser>;
         setUser(customEvent.detail);
     };
-    window.addEventListener('userUpdated_nofreetalk', handleUserUpdate);
+    window.addEventListener('userUpdated_hustlesoul', handleUserUpdate as EventListener); // Updated event name
     return () => {
-        window.removeEventListener('userUpdated_nofreetalk', handleUserUpdate);
+        window.removeEventListener('userUpdated_hustlesoul', handleUserUpdate as EventListener); // Updated event name
     };
   }, []);
 
@@ -43,29 +42,31 @@ export function UserBalanceCard() {
   const diamondBalance = user?.diamond_points ?? 0;
 
   return (
-    <Card className="shadow-lg hover:shadow-primary/50 transition-shadow duration-300">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">Your Balance</CardTitle>
+    <Card className="shadow-xl hover:shadow-primary/30 transition-shadow duration-300 bg-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-xl font-headline text-foreground">Your Wallet</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="flex items-center">
-          <Coins className="h-8 w-8 text-yellow-400 mr-3" />
-          <div>
-            <div className="font-headline text-3xl font-bold text-foreground">
-              {goldBalance.toLocaleString()} <span className="text-xl text-primary">GOLD</span>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-start p-4 bg-background/70 rounded-lg shadow-inner gap-4">
+          <Coins className="h-10 w-10 text-yellow-400 flex-shrink-0" />
+          <div className="overflow-hidden">
+            <div className="text-sm text-muted-foreground">GOLD Balance</div>
+            <div className="font-headline text-3xl font-bold text-foreground truncate" title={goldBalance.toLocaleString()}>
+              {goldBalance.toLocaleString()}
             </div>
           </div>
         </div>
-        <div className="flex items-center">
-          <Gem className="h-7 w-7 text-sky-400 mr-3" />
-          <div>
-            <div className="font-headline text-3xl font-bold text-foreground">
-              {diamondBalance.toLocaleString()} <span className="text-xl text-sky-500">DIAMONDS</span>
+        <div className="flex items-center justify-start p-4 bg-background/70 rounded-lg shadow-inner gap-4">
+          <Gem className="h-10 w-10 text-sky-400 flex-shrink-0" />
+          <div className="overflow-hidden">
+            <div className="text-sm text-muted-foreground">DIAMOND Balance</div>
+            <div className="font-headline text-3xl font-bold text-foreground truncate" title={diamondBalance.toLocaleString()}>
+              {diamondBalance.toLocaleString()}
             </div>
           </div>
         </div>
-         <p className="text-xs text-muted-foreground pt-1">
-          Keep hustling to earn more!
+         <p className="text-xs text-muted-foreground pt-2 text-center">
+          Keep hustling to earn more rewards!
         </p>
       </CardContent>
     </Card>

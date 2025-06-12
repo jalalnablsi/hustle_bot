@@ -1,6 +1,5 @@
-
 'use client';
-
+import { useEffect, useState } from 'react';
 import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,18 +7,51 @@ import { Input } from "@/components/ui/input";
 import { Copy, Users, Gift, TrendingUp, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Mock data - In a real app, this would come from user state/API
-const referralCode = "HUSTLE123XYZ";
-const referralsCount = 15;
-const referralEarnings = 750; // GOLD
-const referredUsers = [
-  { name: "UserAlpha", joined: "2024-07-20", earningsFrom: 50 },
-  { name: "BetaUser", joined: "2024-07-19", earningsFrom: 50 },
-  { name: "GammaUser12", joined: "2024-07-18", earningsFrom: 50 },
-];
-
 export default function ReferralsPage() {
   const { toast } = useToast();
+  const [referralCode, setReferralCode] = useState<string>('');
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      setLoading(true);
+      try {
+        // Step 1: Fetch current user data
+        const response = await fetch('/api/auth/me');
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to fetch user data.');
+        }
+
+        const currentUser = data.user;
+        const referralLink = `https://t.me/HustleSoulBot?start=${currentUser.telegram_id}`;
+        setReferralCode(referralLink);
+
+        // Step 2: Fetch referral details for the current user
+        const referralsResponse = await fetch(`/api/referrals/details?referrer_id=${currentUser.id}`);
+        const referralsData = await referralsResponse.json();
+
+        if (!referralsData.success) {
+          throw new Error(referralsData.error || 'Failed to fetch referral details.');
+        }
+
+        setReferrals(referralsData.referrals);
+      } catch (error: any) {
+        console.error('Error fetching data:', error.message);
+        toast({
+          title: 'Error',
+          description: error.message || 'Could not load referral data.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, [toast]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(referralCode);
@@ -67,7 +99,7 @@ export default function ReferralsPage() {
               <Users className="h-5 w-5 text-accent" />
             </CardHeader>
             <CardContent>
-              <div className="font-headline text-3xl font-bold text-foreground">{referralsCount}</div>
+              <div className="font-headline text-3xl font-bold text-foreground">{referrals.length}</div>
               <p className="text-xs text-muted-foreground">friends joined through you</p>
             </CardContent>
           </Card>
@@ -77,7 +109,9 @@ export default function ReferralsPage() {
               <TrendingUp className="h-5 w-5 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="font-headline text-3xl font-bold text-foreground">{referralEarnings} GOLD</div>
+              <div className="font-headline text-3xl font-bold text-foreground">
+                {referrals.reduce((sum, r) => sum + r.earningsFrom, 0)} GOLD
+              </div>
               <p className="text-xs text-muted-foreground">earned from referrals</p>
             </CardContent>
           </Card>
@@ -89,10 +123,17 @@ export default function ReferralsPage() {
             <CardDescription>Users who joined using your referral code.</CardDescription>
           </CardHeader>
           <CardContent>
-            {referredUsers.length > 0 ? (
+            {loading ? (
+              <p className="text-muted-foreground">Loading referrals...</p>
+            ) : referrals.length > 0 ? (
               <ul className="space-y-3">
-                {referredUsers.map((user, index) => (
-                  <li key={index} className="flex items-center justify-between p-3 bg-card-foreground/5 rounded-md">
+                {referrals.map((user, index) => (
+                  <li
+                    key={index}
+                    className={`flex items-center justify-between p-3 rounded-md ${
+                      user.status === 'active' ? 'bg-green-500/10 border-green-500/50' : 'bg-red-500/10 border-red-500/50'
+                    }`}
+                  >
                     <div>
                       <p className="font-semibold text-foreground">{user.name}</p>
                       <p className="text-xs text-muted-foreground">Joined: {user.joined}</p>

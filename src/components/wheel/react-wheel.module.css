@@ -1,0 +1,62 @@
+
+.wheelContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    margin: 20px auto;
+    user-select: none; 
+  }
+  
+  .wheelSvg {
+    width: 100%;
+    height: 100%;
+    overflow: visible; /* Allow pointer to slightly overflow if needed */
+    /* filter: drop-shadow(0px 6px 18px rgba(0, 0, 0, 0.25)); */
+  }
+  
+  .clickableWheel {
+    cursor: pointer;
+  }
+  
+  .wheelGroup {
+    transform-origin: center;
+    transition-property: transform;
+    transition-duration: 6s; /* Duration of the spin */
+    transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1); /* Smoother, more natural spin - easeOutQuint */
+  }
+  
+  .segmentGroup {
+    /* Styles for the group containing path and icon */
+  }
+  
+  .sectorPath {
+    /* stroke is set inline for dynamic white border */
+    /* stroke-width is set inline */
+    transition: opacity 0.3s;
+  }
+  
+  .sectorPath:hover {
+    opacity: 0.9; 
+  }
+  
+  .sectorIcon {
+    pointer-events: none;
+    /* Colors and size are set dynamically in ReactWheel.tsx */
+    /* No transform needed here as it's handled in SVG group */
+  }
+  
+  .pointerContainer {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.3));
+  }
+  
+  .pointerSvg {
+    width: 100%;
+    height: 100%;
+  }
+  /* Central Hub decorative elements are styled inline in SVG */
+  
