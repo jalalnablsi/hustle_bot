@@ -1,8 +1,8 @@
 
 'use client';
-import { Zap, Gauge } from "lucide-react";
+import { Zap, Gauge, MousePointerSquare } from "lucide-react";
 import { GameCardWrapper } from "./GameCardWrapper";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +25,7 @@ export function QuickTapGamePlaceholder() {
   const [score, setScore] = useState(0);
   const [gameMode, setGameMode] = useState<'fun' | 'rewards'>('fun');
   const { toast } = useToast();
+  const timerId = useRef<NodeJS.Timeout | null>(null);
 
   const handleStartGame = (mode: 'fun' | 'rewards') => {
     setGameActive(true);
@@ -37,17 +38,19 @@ export function QuickTapGamePlaceholder() {
     toast({ title: "Quick Tap Started!", description: `Difficulty: ${selectedDifficulty}. Tap fast!`});
   };
 
-  // Simulate timer countdown
-  useState(() => {
+  // Timer countdown
+  useEffect(() => {
     if (gameActive && timeLeft > 0) {
-      const timer = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
-      return () => clearTimeout(timer);
+      timerId.current = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
     } else if (gameActive && timeLeft === 0 && tapsRemaining > 0) {
       // Time's up!
       toast({ title: "Time's Up!", description: `You didn't tap all targets. Score: ${score}`, variant: "destructive"});
       setGameActive(false);
       // TODO: Backend Integration - Log game session
     }
+    return () => {
+      if (timerId.current) clearTimeout(timerId.current);
+    };
   }, [gameActive, timeLeft, tapsRemaining, score]);
 
   const handleTap = () => {
@@ -58,12 +61,13 @@ export function QuickTapGamePlaceholder() {
 
     if (newTapsRemaining === 0) {
       // All targets tapped
+      if (timerId.current) clearTimeout(timerId.current); // Stop timer
       const settings = difficultySettings[selectedDifficulty];
       let finalScore = 0;
       if (gameMode === 'rewards') {
         finalScore = settings.gold;
         setScore(finalScore);
-        toast({ title: "Level Cleared!", description: `You earned ${settings.gold} GOLD and ${settings.diamond} DIAMOND!`, icon: <Zap className="h-5 w-5 text-yellow-500"/>});
+        toast({ title: "Level Cleared!", description: `You earned ${settings.gold} GOLD and ${settings.diamond.toFixed(2)} DIAMOND!`, icon: <Zap className="h-5 w-5 text-yellow-500"/>});
         // TODO: Backend Integration - Award Gold & Diamonds
         // console.log(`Award ${settings.gold} GOLD and ${settings.diamond} DIAMOND`);
       } else {
@@ -78,7 +82,7 @@ export function QuickTapGamePlaceholder() {
     <GameCardWrapper
       gameKey="quickTap"
       title="Quick Tap Challenge"
-      description="Test your reflexes! Tap targets before time runs out. Higher difficulty means greater rewards."
+      description="Test your reflexes! Tap targets before time runs out. Higher difficulty means greater rewards. Use mouse/touch to play."
       Icon={Zap}
       placeholderImageSrc="https://placehold.co/600x400.png?text=Quick+Tap+Game"
       imageAlt="Quick Tap Game Placeholder"
@@ -98,7 +102,7 @@ export function QuickTapGamePlaceholder() {
                     </SelectTrigger>
                     <SelectContent>
                     {difficulties.map(diff => (
-                        <SelectItem key={diff} value={diff}>{diff.replace('_', ' ').toUpperCase()}</SelectItem>
+                        <SelectItem key={diff} value={diff}>{diff.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</SelectItem>
                     ))}
                     </SelectContent>
                 </Select>
@@ -108,9 +112,10 @@ export function QuickTapGamePlaceholder() {
       }
     >
         {/* Game content for modal */}
-        <div className="text-center py-4">
+        <div className="text-center py-4 flex flex-col items-center justify-center min-h-[50vh]">
             {!gameActive ? (
                 <>
+                    <MousePointerSquare className="h-12 w-12 text-primary mb-4" />
                     <h3 className="text-lg font-semibold mb-2">Ready to Tap?</h3>
                     <div className="w-full max-w-xs mx-auto mb-4">
                         <label htmlFor="difficulty-modal-select" className="text-sm font-medium text-muted-foreground mb-1 block">Difficulty:</label>
@@ -125,20 +130,29 @@ export function QuickTapGamePlaceholder() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                        Rewards for {selectedDifficulty.replace('_', ' ')}: {difficultySettings[selectedDifficulty].gold} GOLD, {difficultySettings[selectedDifficulty].diamond} DIAMOND.
+                    <p className="text-xs text-muted-foreground px-4">
+                        Rewards for {selectedDifficulty.replace('_', ' ')}: {difficultySettings[selectedDifficulty].gold} GOLD, {difficultySettings[selectedDifficulty].diamond.toFixed(2)} DIAMOND.
+                        <br/>
+                        Tap the large button when the game starts.
                     </p>
                 </>
             ) : (
                 <>
-                    <h3 className="text-2xl font-bold text-primary mb-2">Time: {timeLeft}s</h3>
-                    <p className="text-lg text-muted-foreground mb-4">Taps Remaining: {tapsRemaining}</p>
-                    <Button onClick={handleTap} className="w-32 h-32 rounded-full text-2xl animate-pulse-glow mx-auto block">
+                    <h3 className="text-3xl font-bold text-primary mb-2">Time: {timeLeft}s</h3>
+                    <p className="text-xl text-muted-foreground mb-6">Taps Remaining: {tapsRemaining}</p>
+                    <Button 
+                        onClick={handleTap} 
+                        className="w-40 h-40 md:w-48 md:h-48 rounded-full text-3xl animate-pulse-glow mx-auto block shadow-2xl focus:ring-4 ring-primary/50"
+                        aria-label="Tap Me!"
+                    >
                         TAP!
                     </Button>
                 </>
             )}
         </div>
+        <p className="text-xs text-muted-foreground mt-4 text-center px-4">
+          This is a placeholder. In the real game, you would tap the main button area with your mouse or finger.
+        </p>
     </GameCardWrapper>
   );
 }

@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface GameCardWrapperProps {
   gameKey: GameKey;
@@ -122,8 +123,19 @@ export function GameCardWrapper({
       </CardFooter>
 
       <Dialog open={isGameModalOpen} onOpenChange={(open) => {if (!open) closeGameModal(); else setIsGameModalOpen(true);}}>
-        <DialogContent className="max-w-md w-[90vw] p-0" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-          <DialogHeader className="p-4 border-b">
+        <DialogContent 
+          className="max-w-xl w-[90vw] md:w-[70vw] lg:w-[60vw] h-[85vh] flex flex-col p-0" 
+          onPointerDownOutside={(e) => {
+            // Allow interaction with game elements if they are not part of the dialog's direct children that would close it
+            // This might need refinement based on actual game implementation
+            if ((e.target as HTMLElement).closest('[data-no-dismiss-on-pointer-down]')) {
+              return;
+            }
+            // e.preventDefault(); // This line prevents closing, remove if you want default behavior
+          }} 
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="p-4 border-b shrink-0">
             <DialogTitle className="font-headline flex items-center gap-2">
               <Icon className="h-6 w-6 text-primary" /> {title}
             </DialogTitle>
@@ -133,18 +145,19 @@ export function GameCardWrapper({
             </DialogDescription>
           </DialogHeader>
           
-          <div className="p-4 max-h-[60vh] overflow-y-auto">
-            {/* This is where the actual game UI / placeholder content will go */}
-            {children ? children : (
-                <div className="text-center py-8">
-                    <p className="text-muted-foreground">Game simulation for {title}.</p>
-                    <Image src={placeholderImageSrc} alt={imageAlt} width={300} height={150} data-ai-hint={imageAiHint} className="mx-auto my-4 rounded-md" />
-                </div>
-            )}
-             {gameSpecificControls}
-          </div>
+          <ScrollArea className="flex-grow overflow-y-auto">
+            <div className="p-4 md:p-6" data-no-dismiss-on-pointer-down> {/* Game content area */}
+              {children ? children : (
+                  <div className="text-center py-8">
+                      <p className="text-muted-foreground">Game simulation for {title}.</p>
+                      <Image src={placeholderImageSrc} alt={imageAlt} width={300} height={150} data-ai-hint={imageAiHint} className="mx-auto my-4 rounded-md" />
+                  </div>
+              )}
+              {gameSpecificControls}
+            </div>
+          </ScrollArea>
 
-          <DialogFooter className="p-4 border-t">
+          <DialogFooter className="p-4 border-t shrink-0">
             <Button onClick={closeGameModal} variant="outline">
               End Game
             </Button>
