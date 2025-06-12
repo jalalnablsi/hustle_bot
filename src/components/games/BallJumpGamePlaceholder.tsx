@@ -1,6 +1,6 @@
 
 'use client';
-import { ArrowUpCircle, Shield, Gem, MousePointerSquare } from "lucide-react";
+import { ArrowUpCircle, Shield, Gem, MousePointerClick } from "lucide-react";
 import { GameCardWrapper } from "./GameCardWrapper";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -126,7 +126,7 @@ export function BallJumpGamePlaceholder() {
             
             {!gameActive && altitude === 0 && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40">
-                    <MousePointerSquare className="h-12 w-12 text-primary mb-4" />
+                    <MousePointerClick className="h-12 w-12 text-primary mb-4" />
                     <p className="text-xl font-semibold text-white">Tap Anywhere to Jump!</p>
                 </div>
             )}

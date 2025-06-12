@@ -1,8 +1,8 @@
 
 'use client';
-import { Zap, Gauge, MousePointerSquare } from "lucide-react";
+import { Zap, Gauge, MousePointerClick } from "lucide-react";
 import { GameCardWrapper } from "./GameCardWrapper";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -115,7 +115,7 @@ export function QuickTapGamePlaceholder() {
         <div className="text-center py-4 flex flex-col items-center justify-center min-h-[50vh]">
             {!gameActive ? (
                 <>
-                    <MousePointerSquare className="h-12 w-12 text-primary mb-4" />
+                    <MousePointerClick className="h-12 w-12 text-primary mb-4" />
                     <h3 className="text-lg font-semibold mb-2">Ready to Tap?</h3>
                     <div className="w-full max-w-xs mx-auto mb-4">
                         <label htmlFor="difficulty-modal-select" className="text-sm font-medium text-muted-foreground mb-1 block">Difficulty:</label>

@@ -1,6 +1,6 @@
 
 'use client';
-import { Layers, Coins, Gem, MousePointerSquare } from "lucide-react";
+import { Layers, Coins, Gem, MousePointerClick } from "lucide-react";
 import { GameCardWrapper } from "./GameCardWrapper";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -181,7 +181,7 @@ export function TowerBuilderGamePlaceholder() {
 
         {!gameActive && towerBlocks.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
-            <MousePointerSquare className="h-12 w-12 text-primary mb-4" />
+            <MousePointerClick className="h-12 w-12 text-primary mb-4" />
             <p className="text-xl font-semibold text-white">Tap Anywhere to Start Stacking!</p>
             <p className="text-sm text-gray-300">(Or press Space/Enter)</p>
           </div>
