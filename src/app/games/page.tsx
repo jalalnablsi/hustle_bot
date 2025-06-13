@@ -17,7 +17,7 @@ const INITIAL_BLOCK_HEIGHT = 20;
 const INITIAL_BASE_WIDTH = 120;
 const MIN_BLOCK_WIDTH = 10;
 
-const MAX_POOLED_HEARTS = 5; // Max 5 hearts
+const MAX_POOLED_HEARTS = 5;
 const HEART_REGEN_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours per heart
 
 // Reward constants
@@ -60,7 +60,7 @@ export default function StakeBuilderGamePage() {
 
   const [stackedBlocks, setStackedBlocks] = useState<StackedBlock[]>([]);
   const [currentBlock, setCurrentBlock] = useState<{ x: number; y: number; width: number; color: string; direction: 1 | -1; speed: number } | null>(null);
-  const [lastDropPerfect, setLastDropPerfect] = useState(false);
+  const [stackVisualOffsetY, setStackVisualOffsetY] = useState(0); // For smooth scrolling of stack
 
   const [adsRevivesUsedThisAttempt, setAdsRevivesUsedThisAttempt] = useState(0);
   const [isAdDialogOpen, setIsAdDialogOpen] = useState(false);
@@ -111,15 +111,14 @@ export default function StakeBuilderGamePage() {
         if (now >= nextHeartRegenTime) {
           setPooledHearts(prev => {
             const newHearts = Math.min(prev + 1, MAX_POOLED_HEARTS);
-            if (newHearts >= MAX_POOLED_HEARTS) { // Check if newHearts reached or exceeded max
-              setNextHeartRegenTime(null); // Stop timer if hearts are full
+            if (newHearts >= MAX_POOLED_HEARTS) {
+              setNextHeartRegenTime(null); 
             } else {
-              setNextHeartRegenTime(Date.now() + HEART_REGEN_DURATION_MS); // Reset for next heart
+              setNextHeartRegenTime(Date.now() + HEART_REGEN_DURATION_MS); 
             }
             return newHearts;
           });
           setTimeToNextHeart("");
-          // If was waiting for hearts and now has one, go to idle
           if (gameState === 'waiting_for_hearts' && pooledHearts + 1 > 0) {
             setGameState('idle');
           }
@@ -133,36 +132,40 @@ export default function StakeBuilderGamePage() {
       };
       updateTimer();
       intervalId = setInterval(updateTimer, 1000);
-    } else if (pooledHearts >= MAX_POOLED_HEARTS && nextHeartRegenTime !== null) { // >= ensures if it somehow exceeds
+    } else if (pooledHearts >= MAX_POOLED_HEARTS && nextHeartRegenTime !== null) { 
       setNextHeartRegenTime(null);
       setTimeToNextHeart("");
     }
     return () => clearInterval(intervalId);
   }, [pooledHearts, nextHeartRegenTime, gameState]);
 
-  const spawnNewBlock = useCallback((currentTopWidth: number, currentTopY: number, speed: number) => {
-    const newBlockWidth = Math.max(currentTopWidth * 0.95, MIN_BLOCK_WIDTH * 2);
+  const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number, speed: number) => {
+    const newBlockWidth = Math.max(currentTopWidth * 0.95, MIN_BLOCK_WIDTH * 2); // Keep some width reduction
     setCurrentBlock({
       x: Math.random() < 0.5 ? -newBlockWidth : gameAreaWidth,
-      y: currentTopY - INITIAL_BLOCK_HEIGHT - 5,
+      y: visualCurrentTopY - INITIAL_BLOCK_HEIGHT - 5, // Y is absolute screen position
       width: newBlockWidth,
       color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length],
       direction: Math.random() < 0.5 ? 1 : -1,
       speed: Math.min(speed, MAX_BLOCK_SLIDE_SPEED),
     });
-  }, [gameAreaWidth, stackedBlocks.length]);
+  }, [gameAreaWidth, stackedBlocks.length]); // Added stackedBlocks.length as it influences color
+
 
   const initializeNewGameAttempt = useCallback(() => {
     setCurrentAttemptGold(0);
     setCurrentAttemptDiamonds(0);
     setConsecutivePerfectDrops(0);
     setAdsRevivesUsedThisAttempt(0);
+    setStackVisualOffsetY(0); // Reset stack scroll
     const baseBlock: StackedBlock = {
       id: 'base', x: (gameAreaWidth - INITIAL_BASE_WIDTH) / 2,
-      y: GAME_AREA_HEIGHT - INITIAL_BLOCK_HEIGHT, width: INITIAL_BASE_WIDTH, color: 'hsl(var(--muted))',
+      y: GAME_AREA_HEIGHT - INITIAL_BLOCK_HEIGHT, // Y is relative to stack origin
+      width: INITIAL_BASE_WIDTH, color: 'hsl(var(--muted))',
     };
     setStackedBlocks([baseBlock]);
-    spawnNewBlock(baseBlock.width, baseBlock.y, BLOCK_SLIDE_SPEED_START);
+    // Spawn new block above the visual top of the base block
+    spawnNewBlock(baseBlock.width, baseBlock.y - 0 /*stackVisualOffsetY is 0*/, BLOCK_SLIDE_SPEED_START);
     setGameState('playing');
   }, [gameAreaWidth, spawnNewBlock]);
 
@@ -170,8 +173,7 @@ export default function StakeBuilderGamePage() {
     if (pooledHearts > 0) {
       setPooledHearts(prevHearts => {
         const newHearts = prevHearts - 1;
-        // Start regen timer only if it's not already running AND hearts are now below max
-        if (newHearts < MAX_POOLED_HEARTS && !nextHeartRegenTime) {
+        if (newHearts < MAX_POOLED_HEARTS && nextHeartRegenTime === null) {
           setNextHeartRegenTime(Date.now() + HEART_REGEN_DURATION_MS);
         }
         return newHearts;
@@ -185,7 +187,7 @@ export default function StakeBuilderGamePage() {
       });
       setGameState('waiting_for_hearts');
     }
-  }, [pooledHearts, setPooledHearts, nextHeartRegenTime, setNextHeartRegenTime, initializeNewGameAttempt, toast, setGameState, HEART_REGEN_DURATION_MS]);
+  }, [pooledHearts, nextHeartRegenTime, initializeNewGameAttempt, toast]);
 
 
   const processAttemptOver = useCallback(() => {
@@ -202,45 +204,52 @@ export default function StakeBuilderGamePage() {
       duration: 5000,
     });
     setGameState('gameover_attempt');
+     // TODO: Backend - Save score (currentAttemptGold, currentAttemptDiamonds), update high score if needed
   }, [stackedBlocks.length, currentAttemptGold, currentAttemptDiamonds, toast]);
   
   const continueCurrentAttempt = useCallback(() => { 
     if (stackedBlocks.length > 0) {
         const topBlock = stackedBlocks[stackedBlocks.length -1];
         const currentSpeed = BLOCK_SLIDE_SPEED_START + ((stackedBlocks.length -1) * BLOCK_SLIDE_SPEED_INCREMENT);
-        spawnNewBlock(topBlock.width, topBlock.y, Math.min(currentSpeed, MAX_BLOCK_SLIDE_SPEED));
+        // Pass visual top Y for spawning the new currentBlock
+        spawnNewBlock(topBlock.width, topBlock.y - stackVisualOffsetY, Math.min(currentSpeed, MAX_BLOCK_SLIDE_SPEED));
         setGameState('playing');
     } else {
-        initializeNewGameAttempt();
+        initializeNewGameAttempt(); // Should not happen if continuing, but for safety
     }
-  }, [stackedBlocks, spawnNewBlock, initializeNewGameAttempt]);
+  }, [stackedBlocks, spawnNewBlock, initializeNewGameAttempt, stackVisualOffsetY]);
 
   const handleDropBlock = useCallback(() => {
     if (gameState !== 'playing' || !currentBlock) return;
     setGameState('dropping'); 
-    setLastDropPerfect(false);
 
     const topStackBlock = stackedBlocks[stackedBlocks.length - 1];
-    let newBlockX = currentBlock.x;
+    // currentBlock.x and currentBlock.width are absolute screen positions
+    // topStackBlock.x and topStackBlock.width are relative to stack origin, so adjust for visual comparison
+    const visualTopStackBlockX = topStackBlock.x; 
+
+    let newBlockX = currentBlock.x; // This will be the relative X for the new block in the stack
     let newBlockWidth = currentBlock.width;
     let gainedGoldThisDrop = 0;
     let gainedDiamondsThisDrop = 0;
     let isPerfectDrop = false;
 
-    const overlapStart = Math.max(newBlockX, topStackBlock.x);
-    const overlapEnd = Math.min(newBlockX + newBlockWidth, topStackBlock.x + topStackBlock.width);
+    const overlapStart = Math.max(currentBlock.x, visualTopStackBlockX);
+    const overlapEnd = Math.min(currentBlock.x + currentBlock.width, visualTopStackBlockX + topStackBlock.width);
     const overlapWidth = Math.max(0, overlapEnd - overlapStart);
 
     if (overlapWidth > MIN_BLOCK_WIDTH / 2) {
+      // Adjust newBlockX to be relative to the stack container by calculating its position based on the overlap
+      // The visual overlapStart is currentBlock.x, so newBlockX for state should be overlapStart
       newBlockX = overlapStart;
       newBlockWidth = overlapWidth;
 
       const perfectDropThreshold = 3;
-      if (Math.abs(currentBlock.x - topStackBlock.x) < perfectDropThreshold && Math.abs(currentBlock.width - topStackBlock.width) < perfectDropThreshold) {
+      if (Math.abs(currentBlock.x - visualTopStackBlockX) < perfectDropThreshold && 
+          Math.abs(currentBlock.width - topStackBlock.width) < perfectDropThreshold) {
         isPerfectDrop = true;
-        setLastDropPerfect(true);
-        newBlockX = topStackBlock.x;
-        newBlockWidth = topStackBlock.width;
+        newBlockX = topStackBlock.x; // Align perfectly with the block below (relative X)
+        newBlockWidth = topStackBlock.width; // Match width perfectly
         gainedGoldThisDrop = GOLD_FOR_PERFECT_DROP;
         
         const newConsecutivePerfects = consecutivePerfectDrops + 1;
@@ -264,52 +273,68 @@ export default function StakeBuilderGamePage() {
         processAttemptOver(); return;
       }
 
+      // newBlockY is relative to the stack's origin (unshifted)
+      const newBlockY = topStackBlock.y - INITIAL_BLOCK_HEIGHT;
       const newStackedBlock: StackedBlock = {
-        id: `block-${Date.now()}-${Math.random()}`, x: newBlockX, y: topStackBlock.y - INITIAL_BLOCK_HEIGHT,
+        id: `block-${Date.now()}-${Math.random()}`, x: newBlockX, y: newBlockY,
         width: newBlockWidth, color: currentBlock.color, isPerfect: isPerfectDrop,
       };
       
-      const newStack = [...stackedBlocks, newStackedBlock];
-      setStackedBlocks(newStack.map(b => ({...b, isPerfect: b.id === newStackedBlock.id ? isPerfectDrop : false })));
+      setStackedBlocks(prev => [...prev, newStackedBlock]);
 
-      if (newStackedBlock.y < GAME_AREA_HEIGHT / 2.5 && newStack.length > 5) {
-        setStackedBlocks(prev => prev.map(b => ({ ...b, y: b.y + INITIAL_BLOCK_HEIGHT })));
+      // Check if stack needs to scroll based on visual position
+      const visualNewBlockTopY = newBlockY - stackVisualOffsetY;
+      if (visualNewBlockTopY < GAME_AREA_HEIGHT / 2.5 && stackedBlocks.length + 1 > 5) { // +1 for the block being added
+        setStackVisualOffsetY(prevOffset => prevOffset + INITIAL_BLOCK_HEIGHT);
       }
-      const nextSpeed = BLOCK_SLIDE_SPEED_START + (newStack.length * BLOCK_SLIDE_SPEED_INCREMENT);
-      spawnNewBlock(newBlockWidth, newStackedBlock.y, nextSpeed);
+      
+      const nextSpeed = BLOCK_SLIDE_SPEED_START + ((stackedBlocks.length +1) * BLOCK_SLIDE_SPEED_INCREMENT);
+      // Spawn new block above the *visual* top of the newly added block
+      spawnNewBlock(newBlockWidth, newBlockY - stackVisualOffsetY, nextSpeed);
       setGameState('playing');
     } else {
       processAttemptOver();
     }
-  }, [gameState, currentBlock, stackedBlocks, consecutivePerfectDrops, spawnNewBlock, processAttemptOver, toast, setCurrentAttemptGold, setCurrentAttemptDiamonds]);
+  }, [gameState, currentBlock, stackedBlocks, consecutivePerfectDrops, spawnNewBlock, processAttemptOver, toast, gameAreaWidth, stackVisualOffsetY]);
 
   const gameLoop = useCallback(() => {
     if (gameState !== 'playing' || !currentBlock) {
       if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      gameLoopRef.current = null; // Ensure it's cleared
       return;
     }
     setCurrentBlock(prev => {
       if (!prev) return null;
       let newX = prev.x + prev.direction * prev.speed;
-      if ((newX + prev.width > gameAreaWidth && prev.direction === 1) || (newX < 0 && prev.direction === -1)) {
-        const nextX = prev.direction === 1 ? gameAreaWidth - prev.width : 0;
-        return { ...prev, x: nextX, direction: prev.direction * -1 as (1 | -1) };
+      let newDirection = prev.direction;
+      if (newX + prev.width > gameAreaWidth) {
+        newX = gameAreaWidth - prev.width;
+        newDirection = -1;
+      } else if (newX < 0) {
+        newX = 0;
+        newDirection = 1;
       }
-      return { ...prev, x: newX };
+      return { ...prev, x: newX, direction: newDirection as (1 | -1) };
     });
     gameLoopRef.current = requestAnimationFrame(gameLoop);
   }, [gameState, currentBlock, gameAreaWidth]);
 
   useEffect(() => {
     if (gameState === 'playing' && currentBlock) {
-      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); // Clear previous frame if any
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     } else if (gameLoopRef.current) {
       cancelAnimationFrame(gameLoopRef.current);
       gameLoopRef.current = null;
     }
-    return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
-  }, [gameState, gameLoop, currentBlock]);
+    // Cleanup function
+    return () => {
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+        gameLoopRef.current = null;
+      }
+    };
+  }, [gameState, gameLoop, currentBlock]); // currentBlock dependency is important here
 
   const handleWatchAdForOption = useCallback((purpose: 'revive_attempt' | 'gain_pooled_heart') => {
     if (purpose === 'revive_attempt' && adsRevivesUsedThisAttempt >= MAX_ADS_REVIVES_PER_ATTEMPT) {
@@ -335,45 +360,61 @@ export default function StakeBuilderGamePage() {
         setAdProgress(prev => Math.min(prev + (100 / AD_REVIVE_DURATION_S), 100));
       }, 1000);
     } else if (gameState === 'ad_viewing' && isAdDialogOpen && adTimer === 0) {
+      // Ad finished
       setIsAdDialogOpen(false);
-      setAdProgress(100);
+      setAdProgress(100); // Ensure progress is full
+      
+      // TODO: Backend - Verify ad view. For now, assume success.
       if (adPurpose === 'revive_attempt') {
         setAdsRevivesUsedThisAttempt(prev => prev + 1);
-        continueCurrentAttempt();
+        continueCurrentAttempt(); // This sets gameState to 'playing'
         toast({ description: "Attempt continued after Ad!", className: "bg-green-600 border-green-700 text-white dark:bg-green-600 dark:text-white" });
       } else if (adPurpose === 'gain_pooled_heart') {
         setPooledHearts(prev => {
             const newHearts = Math.min(prev + 1, MAX_POOLED_HEARTS);
-            if (newHearts < MAX_POOLED_HEARTS && !nextHeartRegenTime) setNextHeartRegenTime(Date.now() + HEART_REGEN_DURATION_MS);
-            else if (newHearts >= MAX_POOLED_HEARTS) setNextHeartRegenTime(null);
+            if (newHearts < MAX_POOLED_HEARTS && nextHeartRegenTime === null) { // Only start timer if it wasn't already running
+                setNextHeartRegenTime(Date.now() + HEART_REGEN_DURATION_MS);
+            } else if (newHearts >= MAX_POOLED_HEARTS) { // If hearts are now full
+                setNextHeartRegenTime(null); // Stop timer
+            }
             return newHearts;
         });
         toast({ description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400"/> +1 Heart gained from Ad!</span> });
         setGameState(pooledHearts + 1 > 0 ? 'idle' : 'waiting_for_hearts'); // Use updated pooledHearts for condition
       }
-      setAdPurpose(null);
-      setAdTimer(AD_REVIVE_DURATION_S);
-      setAdProgress(0);
+      setAdPurpose(null); // Reset ad purpose
+      setAdTimer(AD_REVIVE_DURATION_S); // Reset timer for next ad
+      setAdProgress(0); // Reset progress
     }
     return () => clearTimeout(adViewTimerId);
-  }, [gameState, isAdDialogOpen, adTimer, adPurpose, continueCurrentAttempt, toast, nextHeartRegenTime, pooledHearts]);
+  }, [gameState, isAdDialogOpen, adTimer, adPurpose, continueCurrentAttempt, toast, pooledHearts, nextHeartRegenTime]);
+
 
   const closeAdDialogEarly = useCallback(() => {
     setIsAdDialogOpen(false);
-    if (adPurpose === 'revive_attempt') setGameState('gameover_attempt');
-    else if (adPurpose === 'gain_pooled_heart') setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
+    // Determine next state based on original intent before ad
+    if (adPurpose === 'revive_attempt') {
+        setGameState('gameover_attempt'); // If they were trying to revive, ad close means game over
+    } else if (adPurpose === 'gain_pooled_heart') {
+        // If they were trying to gain a heart, go back to idle or waiting based on current hearts
+        setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
+    } else {
+        // Fallback if adPurpose was somehow null
+        setGameState('idle');
+    }
     setAdPurpose(null);
     setAdTimer(AD_REVIVE_DURATION_S);
     setAdProgress(0);
     toast({ title: "Ad Closed Early", description: "No reward granted.", variant: "destructive" });
-  }, [pooledHearts, toast]);
+  }, [pooledHearts, toast, adPurpose]);
   
   const handleSpendDiamondsToContinue = useCallback(() => {
-    const cost = 0.05;
+    const cost = DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS; // Assuming this is the cost or define a new one
     if (mockUserDiamondBalance >= cost) {
         const newSimulatedBalance = mockUserDiamondBalance - cost;
         setMockUserDiamondBalance(newSimulatedBalance); 
         localStorage.setItem(LOCALSTORAGE_MOCK_DIAMOND_BALANCE_KEY, newSimulatedBalance.toString()); 
+        // TODO: Backend - Deduct diamonds from user
 
         toast({
             description: (
@@ -391,7 +432,7 @@ export default function StakeBuilderGamePage() {
   const handleReturnToMainMenu = useCallback(() => { setGameState('idle'); }, []);
 
   const canReviveWithAd = adsRevivesUsedThisAttempt < MAX_ADS_REVIVES_PER_ATTEMPT;
-  const canContinueWithDiamonds = mockUserDiamondBalance >= 0.05; 
+  const canContinueWithDiamonds = mockUserDiamondBalance >= DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS; 
   const canWatchAdForPooledHeart = pooledHearts < MAX_POOLED_HEARTS;
 
   const getDisplayedScore = () => {
@@ -421,7 +462,7 @@ export default function StakeBuilderGamePage() {
             className="flex flex-col items-center w-full max-w-sm mx-auto p-2 sm:p-4 bg-slate-800/70 text-slate-100 rounded-xl shadow-2xl border-2 border-primary/30 relative overflow-hidden backdrop-blur-sm"
             onClick={gameState === 'playing' ? handleDropBlock : undefined} role="button" tabIndex={0}
             aria-label={gameState === 'playing' ? "Drop Block" : "Game Area"}
-            onKeyDown={(e) => { if (e.key === ' ' || e.code === 'Space') gameState === 'playing' && handleDropBlock(); }}
+            onKeyDown={(e) => { if ((e.key === ' ' || e.code === 'Space') && gameState === 'playing') handleDropBlock(); }}
         >
           <div className="flex justify-between items-center w-full mb-3 px-3 py-3 bg-slate-900/50 rounded-t-lg shadow-md">
             <div className="text-xl font-bold flex items-center">
@@ -449,22 +490,33 @@ export default function StakeBuilderGamePage() {
                 cursor: gameState === 'playing' ? 'pointer' : 'default' 
             }}
           >
-            {stackedBlocks.map(block => (
-              <div key={block.id}
-                className={cn("absolute rounded-sm",
-                  block.isPerfect && "ring-2 ring-yellow-300 ring-offset-1 ring-offset-black/50"
-                )}
-                style={{ 
-                    left: `${block.x}px`, top: `${block.y}px`, width: `${block.width}px`, height: `${INITIAL_BLOCK_HEIGHT}px`,
-                    backgroundColor: block.color, border: `1px solid ${block.id === 'base' ? 'hsl(var(--muted))' : 'hsl(var(--border))'}`,
-                }}
-              />
-            ))}
+            <div style={{ transform: `translateY(-${stackVisualOffsetY}px)`, transition: 'transform 0.3s ease-out', willChange: 'transform' }}>
+              {stackedBlocks.map(block => (
+                <div key={block.id}
+                  className={cn("absolute rounded-sm",
+                    block.isPerfect && "ring-2 ring-yellow-300 ring-offset-1 ring-offset-black/50" // Static perfect indicator
+                  )}
+                  style={{ 
+                      left: `${block.x}px`, 
+                      top: `${block.y}px`, // Y is relative to stack's unshifted origin
+                      width: `${block.width}px`, 
+                      height: `${INITIAL_BLOCK_HEIGHT}px`,
+                      backgroundColor: block.color, 
+                      border: `1px solid ${block.id === 'base' ? 'hsl(var(--muted))' : 'hsl(var(--border))'}`,
+                      willChange: 'left, top, width', // Hint browser for transform optimization on blocks
+                  }}
+                />
+              ))}
+            </div>
             {currentBlock && (gameState === 'playing' || gameState === 'dropping') && (
               <div className="absolute rounded-sm border border-white/20"
                 style={{ 
-                    left: `${currentBlock.x}px`, top: `${currentBlock.y}px`, width: `${currentBlock.width}px`,
-                    height: `${INITIAL_BLOCK_HEIGHT}px`, backgroundColor: currentBlock.color,
+                    left: `${currentBlock.x}px`, 
+                    top: `${currentBlock.y}px`, // currentBlock.y is absolute screen position
+                    width: `${currentBlock.width}px`,
+                    height: `${INITIAL_BLOCK_HEIGHT}px`, 
+                    backgroundColor: currentBlock.color,
+                    willChange: 'left, top, width',
                 }}
               />
             )}
@@ -491,7 +543,7 @@ export default function StakeBuilderGamePage() {
                         </Button>
                     )}
                      <p className="text-xs text-muted-foreground mt-4">
-                      Perfect Drop: +{GOLD_FOR_PERFECT_DROP} Gold | 3x Perfect: +{DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS} Diamonds
+                      Perfect Drop: +{GOLD_FOR_PERFECT_DROP} Gold | 3x Perfect: +{DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS.toFixed(4)} Diamonds
                     </p>
                   </>
                 )}
@@ -527,7 +579,7 @@ export default function StakeBuilderGamePage() {
                       )}
                       {canContinueWithDiamonds && (
                          <Button onClick={handleSpendDiamondsToContinue} variant="outline" size="lg" className="w-full border-sky-400 text-sky-400 hover:bg-sky-400 hover:text-slate-900 transition-colors">
-                            <Gem className="mr-2 h-5 w-5" /> Use {0.05} <Gem className="inline h-3 w-3"/> to Continue
+                            <Gem className="mr-2 h-5 w-5" /> Use {DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS.toFixed(4)} <Gem className="inline h-3 w-3"/> to Continue
                          </Button>
                       )}
                       <Button onClick={handleReturnToMainMenu} variant="secondary" size="lg" className="w-full">
@@ -572,3 +624,5 @@ export default function StakeBuilderGamePage() {
     </AppShell>
   );
 }
+
+    
