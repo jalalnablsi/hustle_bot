@@ -33,9 +33,9 @@ const BLOCK_COLORS = [
   'hsl(var(--accent))', 'hsl(var(--primary))', 'hsl(var(--secondary))',
 ];
 
-const BLOCK_SLIDE_SPEED_START = 1.6; // Slightly increased for more initial engagement
-const BLOCK_SLIDE_SPEED_INCREMENT = 0.06;
-const MAX_BLOCK_SLIDE_SPEED = 5.5;
+const BLOCK_SLIDE_SPEED_START = 2.8; // Increased for faster start
+const BLOCK_SLIDE_SPEED_INCREMENT = 0.12; // Increased for faster ramp-up
+const MAX_BLOCK_SLIDE_SPEED = 6.0; // Slightly increased max speed
 
 // LocalStorage Keys
 const LOCALSTORAGE_POOLED_HEARTS_KEY = 'stakeBuilder_pooledHearts_v1';
@@ -73,7 +73,7 @@ export default function StakeBuilderGamePage() {
   const { toast } = useToast();
 
   const getGameAreaWidth = useCallback(() => {
-    if (typeof window !== 'undefined') return Math.min(window.innerWidth * 0.95, GAME_AREA_WIDTH_BASE + 40); // Slightly wider for better feel
+    if (typeof window !== 'undefined') return Math.min(window.innerWidth * 0.95, GAME_AREA_WIDTH_BASE + 40);
     return GAME_AREA_WIDTH_BASE + 40;
   }, []);
   const [gameAreaWidth, setGameAreaWidth] = useState(getGameAreaWidth());
@@ -171,11 +171,11 @@ export default function StakeBuilderGamePage() {
   };
 
   const spawnNewBlock = (currentTopWidth: number, currentTopY: number, speed: number) => {
-    const newBlockWidth = Math.max(currentTopWidth * 0.95, MIN_BLOCK_WIDTH * 2); // Make new block slightly smaller or min, ensures challenge
+    const newBlockWidth = Math.max(currentTopWidth * 0.95, MIN_BLOCK_WIDTH * 2);
     setCurrentBlock({
       x: Math.random() < 0.5 ? -newBlockWidth : gameAreaWidth,
       y: currentTopY - INITIAL_BLOCK_HEIGHT - 5, width: newBlockWidth,
-      color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length], // Cycle through colors
+      color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length],
       direction: Math.random() < 0.5 ? 1 : -1,
       speed: Math.min(speed, MAX_BLOCK_SLIDE_SPEED),
     });
@@ -205,15 +205,15 @@ export default function StakeBuilderGamePage() {
         spawnNewBlock(topBlock.width, topBlock.y, Math.min(currentSpeed, MAX_BLOCK_SLIDE_SPEED));
         setGameState('playing');
     } else {
-        initializeNewGameAttempt(); // Should not happen if continuing, but as a fallback
+        initializeNewGameAttempt();
     }
   }, [stackedBlocks, initializeNewGameAttempt]);
 
 
   const handleDropBlock = () => {
     if (gameState !== 'playing' || !currentBlock) return;
-    setGameState('dropping'); //视觉上块正在下落
-    setLastDropPerfect(false); // Reset perfect drop indicator
+    setGameState('dropping'); 
+    setLastDropPerfect(false);
 
     const topStackBlock = stackedBlocks[stackedBlocks.length - 1];
     let newBlockX = currentBlock.x;
@@ -230,12 +230,12 @@ export default function StakeBuilderGamePage() {
       newBlockX = overlapStart;
       newBlockWidth = overlapWidth;
 
-      const perfectDropThreshold = 3; // Pixel tolerance for perfect
+      const perfectDropThreshold = 3; 
       if (Math.abs(currentBlock.x - topStackBlock.x) < perfectDropThreshold && Math.abs(currentBlock.width - topStackBlock.width) < perfectDropThreshold) {
         isPerfectDrop = true;
         setLastDropPerfect(true);
         newBlockX = topStackBlock.x; 
-        newBlockWidth = topStackBlock.width; // Maintain width on perfect
+        newBlockWidth = topStackBlock.width; 
         gainedGoldThisDrop = GOLD_FOR_PERFECT_DROP;
         
         const newConsecutivePerfects = consecutivePerfectDrops + 1;
@@ -246,18 +246,18 @@ export default function StakeBuilderGamePage() {
         if (newConsecutivePerfects >= 3) {
           gainedDiamondsThisDrop = DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS;
           setCurrentAttemptDiamonds(d => d + gainedDiamondsThisDrop);
-          setConsecutivePerfectDrops(0); // Reset after awarding
+          setConsecutivePerfectDrops(0); 
           toast({ description: <span className="flex items-center"><Gem className="h-4 w-4 mr-1 text-sky-400"/> Triple Perfect! +{DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS.toFixed(4)} Diamonds</span>, duration: 2500, className: "bg-sky-500/20 border-sky-500" });
         }
       } else {
         gainedGoldThisDrop = GOLD_FOR_SUCCESSFUL_NON_PERFECT_DROP;
-        setConsecutivePerfectDrops(0); // Reset on non-perfect
+        setConsecutivePerfectDrops(0); 
         toast({ description: <span className="flex items-center"><Coins className="h-4 w-4 mr-1 text-yellow-500"/> +{GOLD_FOR_SUCCESSFUL_NON_PERFECT_DROP} Gold</span>, duration: 1500 });
       }
       setCurrentAttemptGold(s => s + gainedGoldThisDrop);
       // TODO: Backend - Update user's Gold/Diamond balance immediately or queue for end of game
 
-      if (newBlockWidth < MIN_BLOCK_WIDTH) { // Game over if block becomes too small
+      if (newBlockWidth < MIN_BLOCK_WIDTH) { 
         processAttemptOver(); return;
       }
 
@@ -270,14 +270,13 @@ export default function StakeBuilderGamePage() {
       setStackedBlocks(newStack.map(b => ({...b, isPerfect: b.id === newStackedBlock.id ? isPerfectDrop : false })));
 
 
-      // Shift view if stack gets high
       if (newStackedBlock.y < GAME_AREA_HEIGHT / 2.5 && newStack.length > 5) {
         setStackedBlocks(prev => prev.map(b => ({ ...b, y: b.y + INITIAL_BLOCK_HEIGHT })));
       }
       const nextSpeed = BLOCK_SLIDE_SPEED_START + (newStack.length * BLOCK_SLIDE_SPEED_INCREMENT);
       spawnNewBlock(newBlockWidth, newStackedBlock.y, nextSpeed);
       setGameState('playing');
-    } else { // Block missed completely or too little overlap
+    } else { 
       processAttemptOver();
     }
   };
@@ -291,7 +290,6 @@ export default function StakeBuilderGamePage() {
       if (!prev) return null;
       let newX = prev.x + prev.direction * prev.speed;
       if ((newX + prev.width > gameAreaWidth && prev.direction === 1) || (newX < 0 && prev.direction === -1)) {
-        // Ensure block is fully visible when turning
         const nextX = prev.direction === 1 ? gameAreaWidth - prev.width : 0;
         return { ...prev, x: nextX, direction: prev.direction * -1 as (1 | -1) };
       }
@@ -302,7 +300,7 @@ export default function StakeBuilderGamePage() {
 
   useEffect(() => {
     if (gameState === 'playing' && currentBlock) {
-      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); // Clear previous frame
+      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     } else if (gameLoopRef.current) {
       cancelAnimationFrame(gameLoopRef.current);
@@ -423,8 +421,7 @@ export default function StakeBuilderGamePage() {
             style={{ 
                 height: `${GAME_AREA_HEIGHT}px`, 
                 width: `${gameAreaWidth}px`,
-                backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png"), linear-gradient(to bottom, hsl(var(--primary)/0.15) 0%, hsl(var(--background)/0.8) 70%, hsl(var(--accent)/0.25) 100%)', // Subtle texture + gradient
-                backgroundBlendMode: 'overlay, normal',
+                backgroundImage: 'linear-gradient(180deg, hsl(var(--primary)/0.2) 0%, hsl(var(--accent)/0.1) 40%, hsl(var(--background)) 100%)',
                 cursor: gameState === 'playing' ? 'pointer' : 'default' 
             }}
           >
@@ -433,7 +430,7 @@ export default function StakeBuilderGamePage() {
                 className={cn("absolute rounded-sm shadow-lg transition-all duration-100 ease-linear", block.isPerfect && "ring-2 ring-yellow-300 ring-offset-1 ring-offset-black/50 animate-[pulse-glow_1s_ease-in-out_infinite]")}
                 style={{ 
                     left: `${block.x}px`, top: `${block.y}px`, width: `${block.width}px`, height: `${INITIAL_BLOCK_HEIGHT}px`,
-                    backgroundColor: block.color, border: `1px solid rgba(255,255,255,0.15)`,
+                    backgroundColor: block.color, border: `1px solid ${block.id === 'base' ? 'hsl(var(--muted))' : 'hsl(var(--border))'}`,
                 }}
               />
             ))}
@@ -511,7 +508,7 @@ export default function StakeBuilderGamePage() {
             )}
           </div>
           {gameState === 'playing' && (
-              <p className="text-xs text-center text-muted-foreground mt-3 opacity-80">Tap screen or press Space to Drop Block</p>
+              <p className="text-sm text-center text-foreground/80 mt-4">Tap screen or press Space to Drop Block</p>
           )}
 
           {/* Ad Simulation Dialog */}
