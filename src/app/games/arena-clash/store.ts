@@ -1,201 +1,204 @@
+import type { Timestamp } from 'firebase/firestore';
 
-'use client';
+export type GameDifficulty = 'easy' | 'medium' | 'hard' | 'very_hard' | 'very_very_hard';
 
-import { create } from 'zustand';
-import type { ArenaState, Character, GamePhase, Ability, CombatLogEntry } from './types';
-import { CHARACTER_CLASSES, MOCK_LEADERBOARD } from './types';
+export interface UserPaymentSettings {
+  walletAddress?: string;
+  network?: 'polygon' | 'trc20';
+}
+export interface User {
+  id?: string; 
+  telegram_id: string;
+  username: string | null;
+  first_name: string;
+  last_name: string | null;
+  gold_points: number;
+  diamond_points: number;
+  purple_gem_points: number;
+  blue_gem_points?: number;
+  referral_link: string;
+  referrals_made: number;
+  initial_free_spin_used: boolean;
+  ad_spins_used_today_count: number;
+  bonus_spins_available: number;
+  last_login: string; 
+  created_at: string; 
 
-// Helper to create a deep copy of character to avoid direct state mutation issues
-const deepCopyCharacter = (char: Character): Character => JSON.parse(JSON.stringify(char));
+  daily_reward_streak?: number;
+  last_daily_reward_claim_at?: string | null; 
+  payment_settings?: UserPaymentSettings;
+  payment_wallet_address?: string | null; 
+  payment_network?: string | null; 
+  daily_ad_views_limit?: number; 
 
-const initialState: Omit<ArenaState, 'setGamePhase' | 'selectCharacter' | 'startCombat' | 'performPlayerAbility' | 'processAiTurn' | 'applyDamage' | 'applyHeal' | 'endTurn' | 'openUpgradeSystem' > = {
-  gamePhase: "character-selection",
-  player: {
-    id: "player1",
-    name: "Player",
-    selectedCharacter: null,
-  },
-  opponent: null,
-  turn: 1,
-  isPlayerTurn: true,
-  selectedAbility: null,
-  targetCharacterId: null,
-  combatLog: [],
-  leaderboard: MOCK_LEADERBOARD,
-  isLoading: false,
-  errorMessage: null,
+  // Updated for Stake Builder (or similar single-game focus)
+  stake_builder_hearts?: number;
+  stake_builder_last_heart_regen?: string; // ISO string
+  stake_builder_high_score?: number;
+
+
+  // Firestore specific fields if directly mapping from Firestore user docs
+  telegramId?: string; 
+  telegramUsername?: string;
+  firstName?: string;
+  lastName?: string | undefined;
+  points?: number; 
+  goldPoints?: number;
+  diamondPoints?: number;
+  purpleGemPoints?: number;
+  blueGemPoints?: number;
+  lastLoginDate?: string;
+  lastLoginAt?: string | Timestamp; 
+  createdAt?: string | Timestamp; 
+}
+export type AppUser = User; 
+
+
+export type Task = {
+  id: string;
+  title: string;
+  description: string;
+  task_type: string; 
+  platform: string; 
+  reward_type: string; 
+  reward_amount: number;
+  link?: string | null; 
+  requires_user_input: boolean;
+  input_placeholder?: string | null;
+  ad_duration?: number | null; 
+  is_active: boolean;
+  created_at: string; 
+  // Fields for local state / older compatibility
+  awardedCurrency?: 'gold' | 'diamonds' | 'gem_purple' | 'gem_blue' | 'spin' | 'points';
+  awardedAmount?: number;
+  isCompleted?: boolean;
+  dataAiHint?: string;
+  requiresUserInputForVerification?: 'twitter_username' | 'telegram_username' | 'none';
+  userInputPlaceholder?: string;
 };
 
-export const useArenaStore = create<ArenaState>((set, get) => ({
-  ...initialState,
+export interface TrafficTask {
+  id: string;
+  url: string;
+  title?: string;
+  visitDuration: 10 | 15 | 20 | 30 | 60;
+  rewardAmount: number;
+  rewardCurrency: 'gold';
+  costInPurpleGems: number;
+  createdBy: string;
+  createdAt: Date;
+  isActive: boolean;
+}
 
-  setGamePhase: (phase: GamePhase) => set({ gamePhase: phase, errorMessage: null }),
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  points: number; // Generic points, can be adapted to game score
+  avatarUrl?: string;
+  dataAiHint?: string;
+  telegram_id: string;
+}
 
-  selectCharacter: (characterData: Character) => {
-    const playerCharacter = deepCopyCharacter(characterData);
-    playerCharacter.isPlayer = true;
-    // Find a different character for the opponent
-    const opponentData = CHARACTER_CLASSES.find(c => c.id !== characterData.id) || CHARACTER_CLASSES[1];
-    const opponentCharacter = deepCopyCharacter(opponentData);
-    opponentCharacter.isPlayer = false;
+export interface WheelPrize {
+  id: string;
+  name: string;
+  type: 'gold' | 'diamonds';
+  value?: number;
+  minDiamondValue?: number;
+  maxDiamondValue?: number;
+  description: string;
+  probabilityWeight: number;
+  dataAiHint?: string;
+  color?: string;
+  isSpecial?: boolean;
+}
 
-    set({
-      player: { ...get().player, selectedCharacter: playerCharacter },
-      opponent: opponentCharacter,
-      gamePhase: "combat",
-      turn: 1,
-      isPlayerTurn: playerCharacter.stats.speed >= opponentCharacter.stats.speed,
-      combatLog: [{ id: Date.now().toString(), turn: 0, message: `Battle starts! ${playerCharacter.name} vs ${opponentCharacter.name}.`, type: 'info' }],
-    });
-  },
+export interface PollOption {
+  id: string;
+  text: string;
+  vote_count: number; 
+  voteCount?: number; 
+}
 
-  startCombat: (playerCharacter: Character, opponentCharacter: Character) => {
-    // This logic is mostly moved into selectCharacter for simplicity in this version
-    // Can be expanded for matchmaking later
-    set({
-      player: { ...get().player, selectedCharacter: deepCopyCharacter(playerCharacter) },
-      opponent: deepCopyCharacter(opponentCharacter),
-      gamePhase: "combat",
-      turn: 1,
-      isPlayerTurn: playerCharacter.stats.speed >= opponentCharacter.stats.speed,
-      combatLog: [{ id: Date.now().toString(), turn: 0, message: `Battle re-starts! ${playerCharacter.name} vs ${opponentCharacter.name}.`, type: 'info' }],
-    });
-  },
+export interface Poll {
+  id: string;
+  title: string;
+  options: PollOption[];
+  created_at: string | Timestamp; 
+  ends_at: string | Timestamp; 
+  status: 'active' | 'closed';
+  created_by: string; 
+  total_votes: number; 
+  winner_option_id?: string | null;
+  selected_winner_user_id?: string | null;
+  announcement_text?: string | null; 
+  // Fields for local state / older compatibility
+  createdAt?: string | Timestamp;
+  endsAt?: string | Timestamp;
+  createdBy?: string;
+  totalVotes?: number;
+  winnerOptionId?: string | null;
+  selectedWinnerUserId?: string | null;
+  announcementText?: string | null;
+}
 
-  addCombatLog: (message: string, type: CombatLogEntry['type']) => {
-    set(state => ({
-      combatLog: [...state.combatLog, { id: Date.now().toString(), turn: state.turn, message, type }]
-    }));
-  },
-  
-  applyDamage: (targetId: string, amount: number) => {
-    set(state => {
-      const { player, opponent, addCombatLog } = get();
-      let newPlayerChar = player.selectedCharacter;
-      let newOpponentChar = opponent;
-      let targetName = "";
 
-      if (player.selectedCharacter && player.selectedCharacter.id === targetId) {
-        targetName = player.selectedCharacter.name;
-        const newHealth = Math.max(0, player.selectedCharacter.stats.health - amount);
-        newPlayerChar = { ...player.selectedCharacter, stats: { ...player.selectedCharacter.stats, health: newHealth }, isDefeated: newHealth === 0 };
-        addCombatLog(`${targetName} takes ${amount} damage.`, 'damage');
-        if (newHealth === 0) addCombatLog(`${targetName} has been defeated!`, 'info');
-      } else if (opponent && opponent.id === targetId) {
-        targetName = opponent.name;
-        const newHealth = Math.max(0, opponent.stats.health - amount);
-        newOpponentChar = { ...opponent, stats: { ...opponent.stats, health: newHealth }, isDefeated: newHealth === 0 };
-        addCombatLog(`${targetName} takes ${amount} damage.`, 'damage');
-         if (newHealth === 0) addCombatLog(`${targetName} has been defeated!`, 'info');
-      }
-      
-      const gameEnded = (newPlayerChar && newPlayerChar.isDefeated) || (newOpponentChar && newOpponentChar.isDefeated);
+export interface UserPollVote {
+  poll_id: string;
+  user_id: string;
+  selected_option_id: string;
+  voted_at: string; 
+}
 
-      return {
-        player: { ...player, selectedCharacter: newPlayerChar },
-        opponent: newOpponentChar,
-        gamePhase: gameEnded ? 'combat-result' : state.gamePhase,
-      };
-    });
-  },
+export interface DailyRewardItem {
+  day: number;
+  type: 'gold' | 'diamonds';
+  amount: number;
+  icon?: React.ElementType;
+  isSpecial?: boolean;
+}
 
-  applyHeal: (targetId: string, amount: number) => {
-    // Similar to applyDamage, but for healing
-    set(state => {
-      const { player, opponent, addCombatLog } = get();
-      let newPlayerChar = player.selectedCharacter;
-      let newOpponentChar = opponent;
+export interface DailyRewardClaimLog {
+    id?: string; 
+    user_id: string; 
+    telegram_id: string;
+    day_claimed: number;
+    reward_type: 'gold' | 'diamonds';
+    amount_claimed: number;
+    claimed_at?: string; 
+}
 
-      if (player.selectedCharacter && player.selectedCharacter.id === targetId) {
-        const newHealth = Math.min(player.selectedCharacter.stats.maxHealth, player.selectedCharacter.stats.health + amount);
-        newPlayerChar = { ...player.selectedCharacter, stats: { ...player.selectedCharacter.stats, health: newHealth }};
-        addCombatLog(`${player.selectedCharacter.name} heals for ${amount}.`, 'heal');
-      } else if (opponent && opponent.id === targetId) {
-        const newHealth = Math.min(opponent.stats.maxHealth, opponent.stats.health + amount);
-        newOpponentChar = { ...opponent, stats: { ...opponent.stats, health: newHealth }};
-        addCombatLog(`${opponent.name} heals for ${amount}.`, 'heal');
-      }
-      return { player: { ...player, selectedCharacter: newPlayerChar }, opponent: newOpponentChar };
-    });
-  },
-  
-  performPlayerAbility: (ability: Ability, target: Character) => {
-    const { player, opponent, applyDamage, addCombatLog, endTurn } = get();
-    if (!player.selectedCharacter || !opponent ) return;
-    if (!get().isPlayerTurn) return;
+export interface PurpleGemPackage {
+  id: string;
+  usdtAmount: number;
+  gemAmount: number;
+  bonusPercentage?: number;
+  dataAiHint: string;
+}
 
-    addCombatLog(`${player.selectedCharacter.name} uses ${ability.name} on ${target.name}!`, 'info');
-    
-    // TODO: Implement actual ability effects (damage, heal, status effects, cooldowns)
-    if (ability.damage) {
-      applyDamage(target.id, ability.damage + player.selectedCharacter.stats.attackPower);
-    }
-    // Handle mana costs, cooldowns
-    // player.selectedCharacter.stats.mana -= ability.manaCost;
-    // ability.currentCooldown = ability.cooldown;
+export interface ExternalGame {
+  id?: string; 
+  title: string;
+  iframe_url: string;
+  thumbnail_url: string;
+  category: string;
+  tags?: string[];
+  description?: string;
+  instructions?: string;
+  data_ai_hint?: string;
+  is_active: boolean;
+  created_by?: string; 
+  created_at?: string | Timestamp;
+}
 
-    // After ability effect, check if game ended BEFORE ending turn
-    if (get().gamePhase !== 'combat-result') {
-        endTurn();
-    }
-  },
+// Simplified game heart state for a single game focus, directly in AppUser or via local storage for now
+// If multiple games return, the previous GameKey approach would be better.
+// For now, these specific fields are added to AppUser for Stake Builder.
+// type GameKey = 'stakeBuilder'; // Only one game for now
 
-  processAiTurn: () => {
-    set({isLoading: true });
-    const { opponent, player, applyDamage, addCombatLog, endTurn } = get();
-    if (!opponent || !player.selectedCharacter || opponent.isDefeated || player.selectedCharacter.isDefeated) {
-      set({isLoading: false});
-      return;
-    }
-
-    // Simple AI: use the first available ability
-    // TODO: Make AI smarter
-    setTimeout(() => { // Simulate AI thinking time
-        const aiAbility = opponent.abilities[0];
-        if (aiAbility) {
-            addCombatLog(`${opponent.name} uses ${aiAbility.name} on ${player.selectedCharacter!.name}!`, 'info');
-            if (aiAbility.damage) {
-                applyDamage(player.selectedCharacter!.id, aiAbility.damage + opponent.stats.attackPower);
-            }
-        } else {
-             addCombatLog(`${opponent.name} ponders...`, 'info'); // Fallback if no abilities
-        }
-        
-        // After AI ability effect, check if game ended BEFORE ending turn
-        if (get().gamePhase !== 'combat-result') {
-             endTurn();
-        }
-        set({isLoading: false});
-    }, 1000); // 1 second delay for AI turn
-  },
-
-  endTurn: () => {
-    set(state => {
-      const nextPlayerTurn = !state.isPlayerTurn;
-      const newTurnNumber = nextPlayerTurn ? state.turn + 1 : state.turn;
-      if (newTurnNumber > state.turn) {
-        get().addCombatLog(`Turn ${newTurnNumber} begins.`, 'info');
-      }
-      return {
-        isPlayerTurn: nextPlayerTurn,
-        turn: newTurnNumber,
-        selectedAbility: null,
-        targetCharacterId: null,
-      };
-    });
-    // Trigger AI turn if it's now AI's turn
-    if (!get().isPlayerTurn && get().gamePhase === 'combat') {
-      get().processAiTurn();
-    }
-  },
-
-  openUpgradeSystem: () => {
-    set({ gamePhase: 'upgrade-system' });
-  },
-
-}));
-
-// Provider component for easy context wrapping
-export const ArenaProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  return children; // Zustand store is globally available once created, no explicit provider needed like Jotai/Context API
-};
+// export interface GameHeartState {
+//   count: number;
+//   lastReplenished?: string; // ISO string
+//   nextReplenishTime?: string; // ISO string for countdown display
+// }
+```

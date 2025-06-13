@@ -1,167 +1,204 @@
+import type { Timestamp } from 'firebase/firestore';
 
-'use client';
+export type GameDifficulty = 'easy' | 'medium' | 'hard' | 'very_hard' | 'very_very_hard';
 
-import React from 'react';
-import { useArenaStore } from './store';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import Image from 'next/image';
-import { Heart, Sword, Shield, Wand2, Zap, Target, Bot, User, MessageSquare } from 'lucide-react';
-import type { Character, Ability } from './types';
-import { ScrollArea } from '@/components/ui/scroll-area';
+export interface UserPaymentSettings {
+  walletAddress?: string;
+  network?: 'polygon' | 'trc20';
+}
+export interface User {
+  id?: string; 
+  telegram_id: string;
+  username: string | null;
+  first_name: string;
+  last_name: string | null;
+  gold_points: number;
+  diamond_points: number;
+  purple_gem_points: number;
+  blue_gem_points?: number;
+  referral_link: string;
+  referrals_made: number;
+  initial_free_spin_used: boolean;
+  ad_spins_used_today_count: number;
+  bonus_spins_available: number;
+  last_login: string; 
+  created_at: string; 
 
-const CharacterDisplay: React.FC<{ character: Character | null, isPlayerSide: boolean }> = ({ character, isPlayerSide }) => {
-  if (!character) return <div className="w-48 h-64 bg-muted rounded-lg flex items-center justify-center text-muted-foreground">No Character</div>;
+  daily_reward_streak?: number;
+  last_daily_reward_claim_at?: string | null; 
+  payment_settings?: UserPaymentSettings;
+  payment_wallet_address?: string | null; 
+  payment_network?: string | null; 
+  daily_ad_views_limit?: number; 
 
-  const healthPercentage = character.stats.maxHealth > 0 ? (character.stats.health / character.stats.maxHealth) * 100 : 0;
+  // Updated for Stake Builder (or similar single-game focus)
+  stake_builder_hearts?: number;
+  stake_builder_last_heart_regen?: string; // ISO string
+  stake_builder_high_score?: number;
 
-  return (
-    <Card className={`w-full sm:w-56 md:w-64 border-2 ${isPlayerSide ? 'border-blue-500' : 'border-red-500'} bg-card/70 shadow-xl relative`}>
-      {character.isDefeated && (
-        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10 rounded-md">
-          <p className="text-destructive text-2xl font-bold">DEFEATED</p>
-        </div>
-      )}
-      <CardHeader className="p-3 items-center">
-        <div className="relative w-28 h-36 sm:w-32 sm:h-40 mb-2 rounded overflow-hidden border border-border">
-          <Image src={character.spriteUrl} alt={character.name} layout="fill" objectFit="cover" data-ai-hint={`${character.class.toLowerCase()} fantasy character portrait`} />
-        </div>
-        <CardTitle className="text-lg font-headline flex items-center gap-1.5">
-          {isPlayerSide ? <User className="h-5 w-5 text-blue-400"/> : <Bot className="h-5 w-5 text-red-400"/>}
-          {character.name}
-        </CardTitle>
-        <CardDescription className="text-xs">{character.class} - Lvl {character.level}</CardDescription>
-      </CardHeader>
-      <CardContent className="p-3 space-y-2">
-        <div>
-          <div className="flex justify-between items-center text-xs mb-0.5">
-            <span className="text-muted-foreground">HP</span>
-            <span>{character.stats.health} / {character.stats.maxHealth}</span>
-          </div>
-          <Progress value={healthPercentage} className="h-3" 
-            indicatorClassName={healthPercentage > 50 ? 'bg-green-500' : healthPercentage > 20 ? 'bg-yellow-500' : 'bg-red-500'}/>
-        </div>
-        {character.stats.mana !== undefined && character.stats.maxMana !== undefined && (
-          <div>
-            <div className="flex justify-between items-center text-xs mb-0.5">
-                <span className="text-muted-foreground">Mana</span>
-                <span>{character.stats.mana} / {character.stats.maxMana}</span>
-            </div>
-            <Progress value={(character.stats.mana / character.stats.maxMana) * 100} className="h-3" indicatorClassName="bg-blue-500" />
-          </div>
-        )}
-         <div className="grid grid-cols-3 gap-1 text-center text-xs pt-1">
-            <div><Sword size={12} className="inline mr-0.5 text-orange-400"/> {character.stats.attackPower}</div>
-            <div><Shield size={12} className="inline mr-0.5 text-sky-400"/> {character.stats.defense}</div>
-            <div><Zap size={12} className="inline mr-0.5 text-yellow-400"/> {character.stats.speed}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+
+  // Firestore specific fields if directly mapping from Firestore user docs
+  telegramId?: string; 
+  telegramUsername?: string;
+  firstName?: string;
+  lastName?: string | undefined;
+  points?: number; 
+  goldPoints?: number;
+  diamondPoints?: number;
+  purpleGemPoints?: number;
+  blueGemPoints?: number;
+  lastLoginDate?: string;
+  lastLoginAt?: string | Timestamp; 
+  createdAt?: string | Timestamp; 
+}
+export type AppUser = User; 
+
+
+export type Task = {
+  id: string;
+  title: string;
+  description: string;
+  task_type: string; 
+  platform: string; 
+  reward_type: string; 
+  reward_amount: number;
+  link?: string | null; 
+  requires_user_input: boolean;
+  input_placeholder?: string | null;
+  ad_duration?: number | null; 
+  is_active: boolean;
+  created_at: string; 
+  // Fields for local state / older compatibility
+  awardedCurrency?: 'gold' | 'diamonds' | 'gem_purple' | 'gem_blue' | 'spin' | 'points';
+  awardedAmount?: number;
+  isCompleted?: boolean;
+  dataAiHint?: string;
+  requiresUserInputForVerification?: 'twitter_username' | 'telegram_username' | 'none';
+  userInputPlaceholder?: string;
 };
 
-const AbilityButton: React.FC<{ ability: Ability; onClick: () => void; disabled: boolean }> = ({ ability, onClick, disabled }) => {
-  // TODO: Fetch actual Lucide icons based on ability.icon string
-  const Icon = ability.icon === "Sword" ? Sword : ability.icon === "Shield" ? Shield : ability.icon === "Flame" ? Wand2 : Zap;
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onClick}
-      disabled={disabled || (ability.currentCooldown && ability.currentCooldown > 0)}
-      className="flex-1 flex-col h-auto p-2 text-xs hover:bg-primary/10"
-      title={`${ability.description} (CD: ${ability.currentCooldown || 0}/${ability.cooldown}${ability.manaCost ? `, Mana: ${ability.manaCost}` : ''})`}
-    >
-      <Icon className="h-5 w-5 mb-0.5" />
-      <span>{ability.name}</span>
-      {ability.currentCooldown && ability.currentCooldown > 0 && <span className="text-[0.6rem]">CD: {ability.currentCooldown}</span>}
-    </Button>
-  );
-};
+export interface TrafficTask {
+  id: string;
+  url: string;
+  title?: string;
+  visitDuration: 10 | 15 | 20 | 30 | 60;
+  rewardAmount: number;
+  rewardCurrency: 'gold';
+  costInPurpleGems: number;
+  createdBy: string;
+  createdAt: Date;
+  isActive: boolean;
+}
 
-const CombatArena: React.FC = () => {
-  const playerCharacter = useArenaStore(state => state.player.selectedCharacter);
-  const opponentCharacter = useArenaStore(state => state.opponent);
-  const isPlayerTurn = useArenaStore(state => state.isPlayerTurn);
-  const performPlayerAbility = useArenaStore(state => state.performPlayerAbility);
-  const turn = useArenaStore(state => state.turn);
-  const combatLog = useArenaStore(state => state.combatLog);
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  points: number; // Generic points, can be adapted to game score
+  avatarUrl?: string;
+  dataAiHint?: string;
+  telegram_id: string;
+}
 
-  if (!playerCharacter || !opponentCharacter) {
-    return <p>Loading combatants...</p>;
-  }
+export interface WheelPrize {
+  id: string;
+  name: string;
+  type: 'gold' | 'diamonds';
+  value?: number;
+  minDiamondValue?: number;
+  maxDiamondValue?: number;
+  description: string;
+  probabilityWeight: number;
+  dataAiHint?: string;
+  color?: string;
+  isSpecial?: boolean;
+}
 
-  const handleAbilityClick = (ability: Ability) => {
-    // For now, player always targets opponent, opponent always targets player
-    const target = playerCharacter.isPlayer ? opponentCharacter : playerCharacter;
-    performPlayerAbility(ability, target);
-  };
-  
-  const getLogEntryColor = (type: string) => {
-    switch(type) {
-        case 'damage': return 'text-red-400';
-        case 'heal': return 'text-green-400';
-        case 'effect': return 'text-purple-400';
-        case 'info': return 'text-sky-300';
-        case 'critical': return 'text-yellow-400 font-bold';
-        case 'miss': return 'text-slate-400 italic';
-        default: return 'text-muted-foreground';
-    }
-  }
+export interface PollOption {
+  id: string;
+  text: string;
+  vote_count: number; 
+  voteCount?: number; 
+}
 
-  return (
-    <div className="flex flex-col items-center p-2 sm:p-4 space-y-4 md:space-y-6">
-      <h2 className="text-2xl font-bold font-headline text-center">
-        Turn {turn} - {isPlayerTurn && !playerCharacter.isDefeated ? "Your Turn" : opponentCharacter.isDefeated ? "Victory!" : playerCharacter.isDefeated ? "Defeat!" : "Opponent's Turn"}
-      </h2>
+export interface Poll {
+  id: string;
+  title: string;
+  options: PollOption[];
+  created_at: string | Timestamp; 
+  ends_at: string | Timestamp; 
+  status: 'active' | 'closed';
+  created_by: string; 
+  total_votes: number; 
+  winner_option_id?: string | null;
+  selected_winner_user_id?: string | null;
+  announcement_text?: string | null; 
+  // Fields for local state / older compatibility
+  createdAt?: string | Timestamp;
+  endsAt?: string | Timestamp;
+  createdBy?: string;
+  totalVotes?: number;
+  winnerOptionId?: string | null;
+  selectedWinnerUserId?: string | null;
+  announcementText?: string | null;
+}
 
-      {/* Combatants Display */}
-      <div className="flex flex-col md:flex-row justify-around items-center md:items-start w-full gap-4 md:gap-8">
-        <CharacterDisplay character={playerCharacter} isPlayerSide={true} />
-        <div className="text-4xl font-bold text-destructive hidden md:flex items-center self-center h-full animate-pulse-glow">VS</div>
-        <CharacterDisplay character={opponentCharacter} isPlayerSide={false} />
-      </div>
 
-      {/* Player Abilities (only if player's turn and not game over) */}
-      {!playerCharacter.isDefeated && !opponentCharacter.isDefeated && isPlayerTurn && (
-        <Card className="w-full max-w-lg mt-4 bg-card/80">
-          <CardHeader className="p-3">
-            <CardTitle className="text-md text-center font-headline">Choose Your Action</CardTitle>
-          </CardHeader>
-          <CardContent className="p-3 flex flex-wrap justify-center gap-2">
-            {playerCharacter.abilities.map(ability => (
-              <AbilityButton
-                key={ability.id}
-                ability={ability}
-                onClick={() => handleAbilityClick(ability)}
-                disabled={!isPlayerTurn}
-              />
-            ))}
-          </CardContent>
-        </Card>
-      )}
-      {!playerCharacter.isDefeated && !opponentCharacter.isDefeated && !isPlayerTurn && (
-         <p className="text-lg text-muted-foreground animate-pulse text-center">Opponent is thinking...</p>
-      )}
+export interface UserPollVote {
+  poll_id: string;
+  user_id: string;
+  selected_option_id: string;
+  voted_at: string; 
+}
 
-      {/* Combat Log */}
-      <Card className="w-full max-w-2xl mt-4 bg-card/80">
-        <CardHeader className="p-3">
-          <CardTitle className="text-md font-headline flex items-center gap-2"><MessageSquare className="h-5 w-5"/>Combat Log</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ScrollArea className="h-32 sm:h-40 w-full px-3 pb-3">
-            {combatLog.slice().reverse().map(entry => (
-              <p key={entry.id} className={`text-xs ${getLogEntryColor(entry.type)} mb-0.5`}>
-                <span className="font-semibold mr-1">[T{entry.turn}]</span>{entry.message}
-              </p>
-            ))}
-          </ScrollArea>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
+export interface DailyRewardItem {
+  day: number;
+  type: 'gold' | 'diamonds';
+  amount: number;
+  icon?: React.ElementType;
+  isSpecial?: boolean;
+}
 
-export default CombatArena;
+export interface DailyRewardClaimLog {
+    id?: string; 
+    user_id: string; 
+    telegram_id: string;
+    day_claimed: number;
+    reward_type: 'gold' | 'diamonds';
+    amount_claimed: number;
+    claimed_at?: string; 
+}
+
+export interface PurpleGemPackage {
+  id: string;
+  usdtAmount: number;
+  gemAmount: number;
+  bonusPercentage?: number;
+  dataAiHint: string;
+}
+
+export interface ExternalGame {
+  id?: string; 
+  title: string;
+  iframe_url: string;
+  thumbnail_url: string;
+  category: string;
+  tags?: string[];
+  description?: string;
+  instructions?: string;
+  data_ai_hint?: string;
+  is_active: boolean;
+  created_by?: string; 
+  created_at?: string | Timestamp;
+}
+
+// Simplified game heart state for a single game focus, directly in AppUser or via local storage for now
+// If multiple games return, the previous GameKey approach would be better.
+// For now, these specific fields are added to AppUser for Stake Builder.
+// type GameKey = 'stakeBuilder'; // Only one game for now
+
+// export interface GameHeartState {
+//   count: number;
+//   lastReplenished?: string; // ISO string
+//   nextReplenishTime?: string; // ISO string for countdown display
+// }
+```
