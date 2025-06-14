@@ -17,26 +17,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Coins, Gem, Gift, Loader2, Tv, Users, AlertTriangle, RefreshCw, Play } from 'lucide-react';
 import type { WheelPrize as BackendPrizeConfig } from '@/types';
 import Image from 'next/image';
-import ReactWheel from '@/components/wheel/ReactWheel'; 
-import { useUser } from '@/contexts/UserContext'; // Import useUser
+import ReactWheel from '@/components/wheel/ReactWheel';
+import { useUser } from '@/contexts/UserContext';
 
 const AD_SIMULATION_DURATION_SECONDS = 5;
 
 const BACKEND_WHEEL_PRIZES_CONFIG_FOR_PAGE: Omit<BackendPrizeConfig, 'id' | 'dataAiHint' | 'color' | 'isSpecial' | 'description' | 'probabilityWeight'>[] = [
   { name: '50 Gold', type: 'gold', value: 50 },
-  { name: '2 Diamond', type: 'diamonds', value: 2 }, // Adjusted to match backend example. Original was 0.005
+  { name: '2 Diamond', type: 'diamonds', value: 2 },
   { name: '100 Gold', type: 'gold', value: 100 },
   { name: 'Try Again', type: 'gold', value: 0 },
   { name: '25 Gold', type: 'gold', value: 25 },
-  { name: '1 Diamond', type: 'diamonds', value: 1 }, // Adjusted. Original was 0.001
+  { name: '1 Diamond', type: 'diamonds', value: 1 },
   { name: '75 Gold', type: 'gold', value: 75 },
-  { name: '3 Diamond', type: 'diamonds', value: 3 }, // Adjusted. Original was 0.002
+  { name: '3 Diamond', type: 'diamonds', value: 3 },
 ];
 
 
 export default function WheelPage() {
   const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData: fetchUserFromContext } = useUser();
-  
+
   const [isBackendProcessing, setIsBackendProcessing] = useState(false);
   const [isWheelSpinningVisually, setIsWheelSpinningVisually] = useState(false);
   const [targetPrizeIndexForWheel, setTargetPrizeIndexForWheel] = useState<number | null>(null);
@@ -45,15 +45,12 @@ export default function WheelPage() {
   const [isAdSimulationOpen, setIsAdSimulationOpen] = useState(false);
   const [adSimulationCountdown, setAdSimulationCountdown] = useState(AD_SIMULATION_DURATION_SECONDS);
   const [shouldSpinAfterAd, setShouldSpinAfterAd] = useState(false);
-  
+
   const { toast } = useToast();
 
   const syncUser = useCallback(async () => {
-    // This function just calls the context's fetcher if needed
-    // The context itself handles updating currentUser state
-    await fetchUserFromContext(true); // true for isRetry to avoid global loading state change
+    await fetchUserFromContext(true);
   }, [fetchUserFromContext]);
-
 
   const handleSpinAPI = useCallback(async () => {
     if (!currentUser || contextLoadingUser || isBackendProcessing || isWheelSpinningVisually) {
@@ -70,8 +67,8 @@ export default function WheelPage() {
 
     setIsBackendProcessing(true);
     lastWonPrizeRef.current = null;
-    setTargetPrizeIndexForWheel(null); 
-    
+    setTargetPrizeIndexForWheel(null);
+
     try {
       const response = await fetch('/api/wheel/spin', {
         method: 'POST',
@@ -81,22 +78,20 @@ export default function WheelPage() {
       const data = await response.json();
 
       if (response.ok && data.success && typeof data.prizeIndex === 'number') {
-        // API was successful, update user data from response if available, or re-fetch
         if (data.goldPoints !== undefined && data.diamondPoints !== undefined && data.spinsLeft !== undefined) {
-            updateUserSession({ 
-                gold_points: data.goldPoints, 
+            updateUserSession({
+                gold_points: data.goldPoints,
                 diamond_points: data.diamondPoints,
                 bonus_spins_available: data.spinsLeft,
-                // If initial_free_spin_used changed, API should ideally reflect that or we update based on logic
                 initial_free_spin_used: initialFreeSpinIsActuallyAvailable ? true : currentUser.initial_free_spin_used,
             });
         } else {
-            await syncUser(); // Fallback to re-sync user data
+            await syncUser();
         }
         setIsWheelSpinningVisually(true);
         setTargetPrizeIndexForWheel(data.prizeIndex);
       } else {
-        await syncUser(); 
+        await syncUser();
         setIsWheelSpinningVisually(false);
         setIsBackendProcessing(false);
         throw new Error(data.error || 'Failed to spin the wheel. Server did not return a valid prize index.');
@@ -106,13 +101,13 @@ export default function WheelPage() {
       toast({ title: 'Spin Error', description: (error as Error).message || 'Could not complete spin.', variant: 'destructive' });
       setIsBackendProcessing(false);
       setIsWheelSpinningVisually(false);
-      await syncUser(); 
+      await syncUser();
     }
   }, [currentUser, contextLoadingUser, isBackendProcessing, isWheelSpinningVisually, toast, syncUser, updateUserSession]);
-  
+
   const handleSpinAnimationEnd = useCallback((wonPrizeData: { label: string; type: 'gold'|'diamonds'; value?: number; icon: React.ElementType}) => {
     setIsWheelSpinningVisually(false);
-    setIsBackendProcessing(false); 
+    setIsBackendProcessing(false);
     lastWonPrizeRef.current = wonPrizeData;
 
     toast({
@@ -120,32 +115,17 @@ export default function WheelPage() {
       description: (
         <span className="flex items-center gap-1.5">
           <wonPrizeData.icon className={`h-5 w-5 ${wonPrizeData.type === 'gold' ? 'text-yellow-400' : 'text-sky-400'}`} />
-          {wonPrizeData.label} 
+          {wonPrizeData.label}
         </span>
       ),
       duration: 4000,
     });
-    // User data should have been updated by handleSpinAPI or its syncUser call
   }, [toast]);
-  
-  useEffect(() => {
-    let adTimer: NodeJS.Timeout;
-    if (isAdSimulationOpen && adSimulationCountdown > 0) {
-      adTimer = setInterval(() => {
-        setAdSimulationCountdown(prev => prev - 1);
-      }, 1000);
-    } else if (isAdSimulationOpen && adSimulationCountdown === 0) {
-      setIsAdSimulationOpen(false);
-      setAdSimulationCountdown(AD_SIMULATION_DURATION_SECONDS);
-      handleAdWatchedAndReward();
-    }
-    return () => clearInterval(adTimer);
-  }, [isAdSimulationOpen, adSimulationCountdown, handleAdWatchedAndReward]); 
 
   const handleAdWatchedAndReward = useCallback(async () => {
-    if (!currentUser || contextLoadingUser) return;    
+    if (!currentUser || contextLoadingUser) return;
     try {
-      setIsBackendProcessing(true); 
+      setIsBackendProcessing(true);
       const response = await fetch('/api/ads/view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,16 +134,15 @@ export default function WheelPage() {
       const data = await response.json();
       if (response.ok && data.success) {
         toast({ title: 'Spin Earned!', description: 'You got a free spin for watching the ad!', icon: <Gift className="text-primary" /> });
-        // API should return updated spin counts
         if (data.spinsAvailable !== undefined && data.adsWatchedToday !== undefined) {
-            updateUserSession({ 
+            updateUserSession({
                 bonus_spins_available: data.spinsAvailable,
                 ad_spins_used_today_count: data.adsWatchedToday,
             });
         } else {
              await syncUser();
         }
-        setShouldSpinAfterAd(true); 
+        setShouldSpinAfterAd(true);
       } else {
         toast({ title: 'Ad Reward Error', description: data.error || 'Could not grant spin.', variant: 'destructive' });
         await syncUser();
@@ -173,28 +152,43 @@ export default function WheelPage() {
       toast({ title: 'Server Error', description: (error as Error).message || 'Failed to process ad reward.', variant: 'destructive' });
       await syncUser();
     } finally {
-      setIsBackendProcessing(false); 
+      setIsBackendProcessing(false);
     }
   }, [currentUser, contextLoadingUser, toast, syncUser, updateUserSession]);
+
+  useEffect(() => {
+    let adTimer: NodeJS.Timeout;
+    if (isAdSimulationOpen && adSimulationCountdown > 0) {
+      adTimer = setInterval(() => {
+        setAdSimulationCountdown(prev => prev - 1);
+      }, 1000);
+    } else if (isAdSimulationOpen && adSimulationCountdown === 0) {
+      setIsAdSimulationOpen(false);
+      setAdSimulationCountdown(AD_SIMULATION_DURATION_SECONDS);
+      handleAdWatchedAndReward(); // This is now defined before being used
+    }
+    return () => clearInterval(adTimer);
+  }, [isAdSimulationOpen, adSimulationCountdown, handleAdWatchedAndReward]);
+
 
   useEffect(() => {
     if (shouldSpinAfterAd && currentUser && !isBackendProcessing && !isWheelSpinningVisually) {
       const initialFreeSpinIsActuallyAvailableAfterAd = !currentUser.initial_free_spin_used;
       const currentSpinsAfterAd = (initialFreeSpinIsActuallyAvailableAfterAd ? 1 : 0) + (currentUser.bonus_spins_available || 0);
       if (currentSpinsAfterAd > 0) {
-        setTimeout(() => { 
+        setTimeout(() => {
              handleSpinAPI();
         }, 200);
       }
-      setShouldSpinAfterAd(false); 
+      setShouldSpinAfterAd(false);
     }
   }, [shouldSpinAfterAd, currentUser, isBackendProcessing, isWheelSpinningVisually, handleSpinAPI]);
 
   const handleWatchAdButtonClick = () => {
     if (!currentUser || contextLoadingUser || isBackendProcessing || isWheelSpinningVisually) return;
-    
+
     const adsWatched = currentUser.ad_spins_used_today_count || 0;
-    const dailyLimit = currentUser.daily_ad_views_limit || 3; 
+    const dailyLimit = currentUser.daily_ad_views_limit || 3;
 
     if (adsWatched >= dailyLimit) {
       toast({ title: 'Ad Limit Reached', description: `You've watched the maximum ads for today (${adsWatched}/${dailyLimit}).`, variant: 'default' });
@@ -226,7 +220,7 @@ export default function WheelPage() {
       </AppShell>
     );
   }
-  
+
   const initialFreeSpinIsAvailableForDisplay = !currentUser.initial_free_spin_used;
   const spinsAvailableForDisplay = (initialFreeSpinIsAvailableForDisplay ? 1 : 0) + (currentUser.bonus_spins_available || 0);
   const adsWatchedToday = currentUser.ad_spins_used_today_count || 0;
@@ -247,14 +241,14 @@ export default function WheelPage() {
 
           <CardContent className="pt-4 pb-4 px-2 sm:px-4 space-y-4 flex flex-col items-center">
             <ReactWheel
-              fixedWheelSize={380} 
+              fixedWheelSize={380}
               segmentsConfig={BACKEND_WHEEL_PRIZES_CONFIG_FOR_PAGE}
               targetPrizeIndex={targetPrizeIndexForWheel}
               isWheelSpinningVisually={isWheelSpinningVisually}
               onSpinAnimationEnd={handleSpinAnimationEnd}
-              onWheelClick={handleSpinAPI} 
+              onWheelClick={handleSpinAPI}
             />
-            
+
             <div className="text-center space-y-1 mt-4 w-full">
               {lastWonPrizeRef.current && !isWheelSpinningVisually && (
                   <div className="p-2 bg-primary/10 rounded-lg my-2 text-center border border-primary/30 max-w-xs mx-auto">
@@ -269,8 +263,8 @@ export default function WheelPage() {
                 Spins Available: <span className="text-primary text-xl font-bold">{spinsAvailableForDisplay}</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                {initialFreeSpinIsAvailableForDisplay ? "Your first spin is FREE!" : 
-                 (currentUser.bonus_spins_available || 0) > 0 ? `You have ${currentUser.bonus_spins_available} bonus spin(s).` : 
+                {initialFreeSpinIsAvailableForDisplay ? "Your first spin is FREE!" :
+                 (currentUser.bonus_spins_available || 0) > 0 ? `You have ${currentUser.bonus_spins_available} bonus spin(s).` :
                  "No bonus spins currently."}
               </p>
                <p className="text-xs text-muted-foreground">
@@ -280,7 +274,7 @@ export default function WheelPage() {
           </CardContent>
            <CardFooter className="bg-muted/30 p-3 sm:p-4 flex flex-col items-center gap-2 border-t border-primary/20">
              <Button
-              onClick={handleSpinAPI} 
+              onClick={handleSpinAPI}
               variant="default"
               className="w-full max-w-xs bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 py-2.5 text-md sm:text-lg rounded-lg shadow-lg transform hover:scale-105 transition-transform"
               disabled={contextLoadingUser || isBackendProcessing || isWheelSpinningVisually || spinsAvailableForDisplay <= 0}
@@ -301,7 +295,7 @@ export default function WheelPage() {
             >
                 <Tv className="mr-2 h-4 w-4 sm:h-5 sm:w-5" /> Watch Ad for Spin ({dailyAdViewLimit - adsWatchedToday} left)
             </Button>
-            
+
             <Link href="/referrals" passHref className="w-full max-w-xs">
               <Button variant="secondary" className="w-full py-2.5 text-sm sm:text-base" disabled={!currentUser?.referral_link}>
                 <Users className="mr-2 h-4 w-4 sm:h-5 sm:w-5" /> Invite Friends & Earn More
@@ -319,8 +313,8 @@ export default function WheelPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 text-center space-y-2">
-               <Image 
-                  src="https://placehold.co/300x150/1f2937/4b5563.png?text=Ad+Playing..." 
+               <Image
+                  src="https://placehold.co/300x150/1f2937/4b5563.png?text=Ad+Playing..."
                   alt="Simulated Ad" width={300} height={150} data-ai-hint="advertisement video player"
                   className="mx-auto rounded-md shadow-lg border"
                 />
@@ -337,3 +331,5 @@ export default function WheelPage() {
     </AppShell>
   );
 }
+
+    
