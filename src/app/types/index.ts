@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export type GameDifficulty = 'easy' | 'medium' | 'hard' | 'very_hard' | 'very_very_hard';
@@ -31,9 +32,11 @@ export interface User {
   payment_network?: string | null; 
   daily_ad_views_limit?: number; 
 
-  // Updated for Stake Builder (or similar single-game focus)
-  stake_builder_hearts?: number;
-  stake_builder_last_heart_regen?: string; // ISO string
+  // Fields for specific games, e.g., Stake Builder (Sky High Stacker)
+  // These would typically be part of a more flexible structure like a JSONB field `game_stats` in your DB
+  // For simplicity here, adding them directly if only one main game.
+  stake_builder_hearts?: number; // Current hearts for this game
+  stake_builder_last_heart_regen?: string; // ISO string for last regen time for this game
   stake_builder_high_score?: number;
 
 
@@ -96,43 +99,45 @@ export interface LeaderboardEntry {
   points: number; // Generic points, can be adapted to game score
   avatarUrl?: string;
   dataAiHint?: string;
-  telegram_id: string;
+  telegram_id: string; // Ensure this is present if leaderboard is user-specific
 }
 
 export interface WheelPrize {
   id: string;
   name: string;
-  type: 'gold' | 'diamonds';
-  value?: number;
-  minDiamondValue?: number;
-  maxDiamondValue?: number;
+  type: 'gold' | 'diamonds'; // Keep simple for now
+  value?: number; // For gold
+  minDiamondValue?: number; // For diamond ranges
+  maxDiamondValue?: number; // For diamond ranges
   description: string;
-  probabilityWeight: number;
+  probabilityWeight: number; // For weighted random selection on backend
   dataAiHint?: string;
-  color?: string;
-  isSpecial?: boolean;
+  color?: string; // For wheel segment color
+  isSpecial?: boolean; // For highlighting special prizes
 }
 
+// Polls related types
 export interface PollOption {
   id: string;
   text: string;
-  vote_count: number; 
-  voteCount?: number; 
+  vote_count: number; // Stored in DB
+  voteCount?: number; // Might be used for local state updates
 }
 
 export interface Poll {
   id: string;
   title: string;
   options: PollOption[];
-  created_at: string | Timestamp; 
-  ends_at: string | Timestamp; 
+  created_at: string | Timestamp; // ISO string or Timestamp
+  ends_at: string | Timestamp;   // ISO string or Timestamp
   status: 'active' | 'closed';
-  created_by: string; 
-  total_votes: number; 
+  created_by: string; // User ID of creator
+  total_votes: number; // Stored in DB
   winner_option_id?: string | null;
-  selected_winner_user_id?: string | null;
-  announcement_text?: string | null; 
-  // Fields for local state / older compatibility
+  selected_winner_user_id?: string | null; // If a user is selected from voters
+  announcement_text?: string | null; // For winner announcement
+
+  // Local state compatibility, can be removed if backend fully drives state
   createdAt?: string | Timestamp;
   endsAt?: string | Timestamp;
   createdBy?: string;
@@ -147,25 +152,26 @@ export interface UserPollVote {
   poll_id: string;
   user_id: string;
   selected_option_id: string;
-  voted_at: string; 
+  voted_at: string; // ISO string
 }
 
+// Daily Rewards
 export interface DailyRewardItem {
   day: number;
   type: 'gold' | 'diamonds';
   amount: number;
-  icon?: React.ElementType;
-  isSpecial?: boolean;
+  icon?: React.ElementType; // Lucide icon for display
+  isSpecial?: boolean; // For highlighting milestone days
 }
 
 export interface DailyRewardClaimLog {
-    id?: string; 
-    user_id: string; 
-    telegram_id: string;
-    day_claimed: number;
+    id?: string; // Optional: If you need to identify the log entry itself
+    user_id: string; // UUID of the user
+    telegram_id: string; // Telegram ID for reference
+    day_claimed: number; // Which day in the streak was claimed (e.g., 1 for Day 1, 7 for Day 7)
     reward_type: 'gold' | 'diamonds';
     amount_claimed: number;
-    claimed_at?: string; 
+    claimed_at?: string; // ISO timestamp of when it was claimed
 }
 
 export interface PurpleGemPackage {
@@ -177,7 +183,7 @@ export interface PurpleGemPackage {
 }
 
 export interface ExternalGame {
-  id?: string; 
+  id?: string; // Optional: UUID from DB
   title: string;
   iframe_url: string;
   thumbnail_url: string;
@@ -187,18 +193,17 @@ export interface ExternalGame {
   instructions?: string;
   data_ai_hint?: string;
   is_active: boolean;
-  created_by?: string; 
-  created_at?: string | Timestamp;
+  created_by?: string; // Admin User ID
+  created_at?: string | Timestamp; // ISO string or Timestamp
 }
 
-// Simplified game heart state for a single game focus, directly in AppUser or via local storage for now
-// If multiple games return, the previous GameKey approach would be better.
-// For now, these specific fields are added to AppUser for Stake Builder.
-// type GameKey = 'stakeBuilder'; // Only one game for now
+// Example structure for a game's heart state if managed per game type
+// This would align with a backend structure where user.game_hearts is a JSONB like:
+// { "stake-builder": { "count": 3, "nextRegen": "iso_timestamp" }, "another-game": { ... } }
+export interface GameSpecificHeartState {
+  count: number;
+  nextRegen: string | null; // ISO timestamp for the next regeneration time for this specific game
+}
 
-// export interface GameHeartState {
-//   count: number;
-//   lastReplenished?: string; // ISO string
-//   nextReplenishTime?: string; // ISO string for countdown display
-// }
-```
+export type GameHearts = Record<string, GameSpecificHeartState>; // e.g. { 'stake-builder': { count: 3, nextRegen: '...' } }
+
