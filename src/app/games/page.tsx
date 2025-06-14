@@ -12,21 +12,21 @@ import Image from "next/image";
 import { Progress } from "@/components/ui/progress";
 import type { AppUser } from '@/app/types';
 
-const GAME_AREA_WIDTH_BASE = 320; // Base width for game logic
-const GAME_AREA_HEIGHT_MIN = 500; // Min height for the playable area
+const GAME_AREA_WIDTH_BASE = 320; 
+const GAME_AREA_HEIGHT_MIN = 500;
 const INITIAL_BLOCK_HEIGHT = 20;
 const INITIAL_BASE_WIDTH = 120;
 const MIN_BLOCK_WIDTH = 10;
 
 const MAX_POOLED_HEARTS = 5;
-const HEART_REGEN_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours per heart
+const HEART_REGEN_DURATION_MS = 3 * 60 * 60 * 1000; 
 
 const GOLD_FOR_SUCCESSFUL_NON_PERFECT_DROP = 2;
 const GOLD_FOR_PERFECT_DROP = 5;
 const DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS = 0.05;
 
 const MAX_ADS_REVIVES_PER_ATTEMPT = 1;
-const AD_REVIVE_DURATION_S = 5; // Simulated ad duration
+const AD_REVIVE_DURATION_S = 5;
 const DIAMONDS_TO_CONTINUE_ATTEMPT = 0.008;
 const MAX_DIAMOND_CONTINUES_PER_ATTEMPT = 5;
 
@@ -48,14 +48,13 @@ interface StackedBlock {
   id: string; x: number; y: number; width: number; color: string; isPerfect?: boolean;
 }
 
-// CSS variable names for header and bottom nav heights
-const HEADER_HEIGHT_CSS_VAR = 'var(--header-height, 64px)'; // Default if not globally set
-const BOTTOM_NAV_HEIGHT_CSS_VAR = 'var(--bottom-nav-height, 64px)'; // Default if not globally set
+const HEADER_HEIGHT_CSS_VAR = 'var(--header-height, 64px)';
+const BOTTOM_NAV_HEIGHT_CSS_VAR = 'var(--bottom-nav-height, 64px)';
 
 export default function StakeBuilderGamePage() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isFetchingUser, setIsFetchingUser] = useState(true);
-  const [isGameApiLoading, setIsGameApiLoading] = useState(false); // For API calls during gameplay
+  const [isGameApiLoading, setIsGameApiLoading] = useState(false);
 
   const [gameState, setGameState] = useState<'loading_user_data' | 'idle' | 'playing' | 'dropping' | 'gameover_attempt' | 'ad_viewing' | 'waiting_for_hearts'>('loading_user_data');
   
@@ -64,8 +63,8 @@ export default function StakeBuilderGamePage() {
   const [consecutivePerfectDrops, setConsecutivePerfectDrops] = useState(0);
   const [stakeBuilderHighScore, setStakeBuilderHighScore] = useState(0);
 
-  const [pooledHearts, setPooledHearts] = useState(0); // API will be source of truth
-  const [nextHeartRegenTime, setNextHeartRegenTime] = useState<number | null>(null); // Timestamp
+  const [pooledHearts, setPooledHearts] = useState(0);
+  const [nextHeartRegenTime, setNextHeartRegenTime] = useState<number | null>(null);
   const [timeToNextHeart, setTimeToNextHeart] = useState<string>("");
 
   const [stackedBlocks, setStackedBlocks] = useState<StackedBlock[]>([]);
@@ -88,7 +87,7 @@ export default function StakeBuilderGamePage() {
     if (typeof window !== 'undefined') {
         const gamePageContainer = document.getElementById('stake-builder-game-page-container');
         if (gamePageContainer) {
-            return Math.min(gamePageContainer.clientWidth - 16, GAME_AREA_WIDTH_BASE + 80); // Max width, padding
+            return Math.min(gamePageContainer.clientWidth - 16, GAME_AREA_WIDTH_BASE + 80);
         }
         return Math.min(window.innerWidth * 0.95, GAME_AREA_WIDTH_BASE + 80);
     }
@@ -103,34 +102,48 @@ export default function StakeBuilderGamePage() {
     return () => window.removeEventListener('resize', handleResize);
   }, [getGameAreaWidth]);
 
+  const updateHeartStateFromApi = useCallback((apiData: any) => {
+    let heartsCount = 0;
+    let nextRegenTimestamp: string | null = null;
+
+    if (apiData.success) {
+        if (typeof apiData.hearts === 'number') { // Flat structure for single game type
+            heartsCount = apiData.hearts;
+            nextRegenTimestamp = apiData.nextReplenishTime || apiData.nextRegen || null;
+        } else if (apiData.hearts && typeof apiData.hearts[GAME_TYPE_IDENTIFIER] === 'number') { // e.g. {"stake-builder": 5}
+            heartsCount = apiData.hearts[GAME_TYPE_IDENTIFIER];
+            nextRegenTimestamp = apiData.nextReplenishTime || apiData.nextRegen || null; // API might provide global or specific regen time
+        } else if (apiData.hearts && typeof apiData.hearts[GAME_TYPE_IDENTIFIER]?.count === 'number') { // Nested structure
+            heartsCount = apiData.hearts[GAME_TYPE_IDENTIFIER].count;
+            nextRegenTimestamp = apiData.hearts[GAME_TYPE_IDENTIFIER].nextRegen || null;
+        } else if (apiData.remainingHearts) { // From use-heart endpoint
+             if (typeof apiData.remainingHearts === 'number') {
+                heartsCount = apiData.remainingHearts;
+                nextRegenTimestamp = apiData.nextReplenishTime || null;
+             } else if (apiData.remainingHearts[GAME_TYPE_IDENTIFIER] && typeof apiData.remainingHearts[GAME_TYPE_IDENTIFIER].count === 'number') {
+                heartsCount = apiData.remainingHearts[GAME_TYPE_IDENTIFIER].count;
+                nextRegenTimestamp = apiData.remainingHearts[GAME_TYPE_IDENTIFIER].nextRegen || null;
+             }
+        }
+    }
+    
+    setPooledHearts(heartsCount);
+    if (nextRegenTimestamp && heartsCount < MAX_POOLED_HEARTS) {
+        setNextHeartRegenTime(new Date(nextRegenTimestamp).getTime());
+    } else {
+        setNextHeartRegenTime(null);
+    }
+  }, []);
+
+
   const fetchUserHearts = useCallback(async (userIdForFetch: string) => {
     if (!userIdForFetch) return;
     setIsGameApiLoading(true);
     try {
-      // Assuming GET /api/games/hearts does not require a body and uses cookie for auth or userId in query
-      const res = await fetch(`/api/games/hearts?userId=${userIdForFetch}`); // Adapt if API takes userId differently
+      const res = await fetch(`/api/games/hearts?userId=${userIdForFetch}`);
       const data = await res.json();
-
       if (data.success) {
-        if (typeof data.hearts === 'number') { // Handles flat structure: {"hearts": 5, "nextReplenishTime": "..."}
-            setPooledHearts(data.hearts);
-            if (data.nextReplenishTime && data.hearts < MAX_POOLED_HEARTS) {
-                setNextHeartRegenTime(new Date(data.nextReplenishTime).getTime());
-            } else {
-                setNextHeartRegenTime(null);
-            }
-        } else if (data.hearts && typeof data.hearts[GAME_TYPE_IDENTIFIER]?.count === 'number') { // Fallback for nested
-            const gameHeartData = data.hearts[GAME_TYPE_IDENTIFIER];
-            setPooledHearts(Math.min(gameHeartData.count, MAX_POOLED_HEARTS));
-            if (gameHeartData.nextRegen && gameHeartData.count < MAX_POOLED_HEARTS) {
-              setNextHeartRegenTime(new Date(gameHeartData.nextRegen).getTime());
-            } else {
-              setNextHeartRegenTime(null);
-            }
-        } else {
-            console.warn("Unexpected hearts data structure from API:", data);
-            toast({ title: 'Heart Sync Issue', description: 'Received unexpected heart data.', variant: 'destructive' });
-        }
+        updateHeartStateFromApi(data);
       } else {
         toast({ title: 'Heart Sync Failed', description: data.error || 'Could not sync hearts with server.', variant: 'destructive' });
       }
@@ -139,9 +152,8 @@ export default function StakeBuilderGamePage() {
     } finally {
       setIsGameApiLoading(false);
     }
-  }, [toast]);
+  }, [toast, updateHeartStateFromApi]);
   
-  // Fetch current user, their high score, and then their hearts
   useEffect(() => {
     const fetchInitialData = async () => {
       setIsFetchingUser(true);
@@ -165,51 +177,47 @@ export default function StakeBuilderGamePage() {
           if (highScoreData.success) {
             setStakeBuilderHighScore(highScoreData.highScore || 0);
           }
-        } else {
-            console.warn("Could not fetch high score for stake-builder");
         }
         
-        // After getting user, fetch their hearts
         if (fetchedUser.id) {
             await fetchUserHearts(fetchedUser.id);
         }
-        setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts'); // Set initial game state based on fetched hearts
-
+        // Game state will be set by the useEffect below depending on hearts
       } catch (error) {
         toast({ title: 'Error Loading Game Data', description: (error as Error).message, variant: 'destructive' });
         setCurrentUser(null);
-        setGameState('idle'); // Fallback state
+        setGameState('idle'); 
       } finally {
         setIsFetchingUser(false);
       }
     };
     fetchInitialData();
-  }, [toast, fetchUserHearts]); // fetchUserHearts is stable due to useCallback
+  }, [toast, fetchUserHearts]);
 
   useEffect(() => {
-    // This effect ensures game state is updated once hearts are fetched.
     if (!isFetchingUser && currentUser) {
         if (pooledHearts > 0) {
             if (gameState === 'loading_user_data' || gameState === 'waiting_for_hearts') {
                  setGameState('idle');
             }
         } else {
-             if (gameState === 'loading_user_data' || gameState === 'idle') {
-                setGameState('waiting_for_hearts');
+             if (gameState === 'loading_user_data' || gameState === 'idle' || gameState === 'playing' || gameState === 'gameover_attempt') {
+                if (gameState !== 'ad_viewing') { // Don't switch if ad is playing
+                   setGameState('waiting_for_hearts');
+                }
             }
         }
     }
   }, [pooledHearts, isFetchingUser, currentUser, gameState]);
 
 
-  // Client-side Heart Regeneration Timer (visual countdown)
   useEffect(() => {
     let intervalId: NodeJS.Timeout | undefined;
     if (pooledHearts < MAX_POOLED_HEARTS && nextHeartRegenTime !== null) {
       const updateTimer = () => {
         const now = Date.now();
         if (now >= nextHeartRegenTime) {
-          if (currentUser?.id) fetchUserHearts(currentUser.id); // Re-sync with backend
+          if (currentUser?.id) fetchUserHearts(currentUser.id);
           setTimeToNextHeart(""); 
         } else {
           const remainingMs = nextHeartRegenTime - now;
@@ -228,43 +236,27 @@ export default function StakeBuilderGamePage() {
     return () => clearInterval(intervalId);
   }, [pooledHearts, nextHeartRegenTime, currentUser?.id, fetchUserHearts]);
 
-  // Periodic Backend Heart Replenishment Check
   useEffect(() => {
     if (!currentUser?.id) return;
     const checkBackendReplenish = async () => {
-      if (!currentUser?.id) return; // Guard against undefined user ID
+      if (!currentUser?.id) return;
       try {
         const res = await fetch('/api/games/replenish-hearts', { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: currentUser.id }), // gameType might be needed by backend
+          body: JSON.stringify({ userId: currentUser.id }),
         });
         const data = await res.json();
         if (data.success) {
-            if (typeof data.hearts === 'number') {
-                setPooledHearts(data.hearts);
-                if (data.nextReplenish && data.hearts < MAX_POOLED_HEARTS) {
-                    setNextHeartRegenTime(new Date(data.nextReplenish).getTime());
-                } else {
-                    setNextHeartRegenTime(null);
-                }
-            } else if (data.hearts && typeof data.hearts[GAME_TYPE_IDENTIFIER]?.count === 'number') {
-                const gameHeartData = data.hearts[GAME_TYPE_IDENTIFIER];
-                setPooledHearts(Math.min(gameHeartData.count, MAX_POOLED_HEARTS));
-                 if (gameHeartData.nextRegen && gameHeartData.count < MAX_POOLED_HEARTS) {
-                    setNextHeartRegenTime(new Date(gameHeartData.nextRegen).getTime());
-                 } else {
-                    setNextHeartRegenTime(null);
-                 }
-            }
-        } // No toast on error for background check to avoid spam
+            updateHeartStateFromApi(data);
+        }
       } catch (error) {
         console.error('Error during periodic heart replenish check:', error);
       }
     };
-    const replenishInterval = setInterval(checkBackendReplenish, 5 * 60 * 1000); // Check every 5 minutes
+    const replenishInterval = setInterval(checkBackendReplenish, 5 * 60 * 1000);
     return () => clearInterval(replenishInterval);
-  }, [currentUser?.id]);
+  }, [currentUser?.id, updateHeartStateFromApi]);
 
 
   const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number, speed: number) => {
@@ -302,7 +294,7 @@ export default function StakeBuilderGamePage() {
       toast({ title: "User Not Loaded", description: "Please wait or refresh.", variant: "destructive" });
       return;
     }
-    if (pooledHearts <= 0 && gameState !== 'ad_viewing') { // Also check gameState
+    if (pooledHearts <= 0 && gameState !== 'ad_viewing') {
       setGameState('waiting_for_hearts');
       toast({ title: "No Hearts Left!", description: "Watch an ad or wait for hearts to regenerate."});
       return;
@@ -318,43 +310,19 @@ export default function StakeBuilderGamePage() {
       const data = await res.json();
       if (!data.success) {
         toast({ title: 'Could Not Start Game', description: data.error || "Failed to use a heart.", variant: 'destructive'});
-        if (currentUser.id) await fetchUserHearts(currentUser.id); // Re-sync hearts
+        if (currentUser.id) await fetchUserHearts(currentUser.id);
         setIsGameApiLoading(false);
         return;
       }
       
-      // Update local hearts based on API response if provided, otherwise optimistic update
-      if (data.remainingHearts) {
-          if (typeof data.remainingHearts === 'number') {
-             setPooledHearts(data.remainingHearts);
-             if (data.nextReplenishTime && data.remainingHearts < MAX_POOLED_HEARTS) {
-                setNextHeartRegenTime(new Date(data.nextReplenishTime).getTime());
-             } else if (data.remainingHearts >= MAX_POOLED_HEARTS || !data.nextReplenishTime) {
-                 setNextHeartRegenTime(null);
-             }
-          } else if (data.remainingHearts[GAME_TYPE_IDENTIFIER] && typeof data.remainingHearts[GAME_TYPE_IDENTIFIER].count === 'number') {
-             const gameHeartData = data.remainingHearts[GAME_TYPE_IDENTIFIER];
-             setPooledHearts(gameHeartData.count);
-             if (gameHeartData.nextRegen && gameHeartData.count < MAX_POOLED_HEARTS) {
-                setNextHeartRegenTime(new Date(gameHeartData.nextRegen).getTime());
-             } else {
-                setNextHeartRegenTime(null);
-             }
-          }
-      } else { // Optimistic update if API doesn't return new heart state
-        const newHearts = Math.max(0, pooledHearts - 1);
-        setPooledHearts(newHearts);
-        if (newHearts < MAX_POOLED_HEARTS && nextHeartRegenTime === null) {
-          setNextHeartRegenTime(Date.now() + HEART_REGEN_DURATION_MS); 
-        }
-      }
+      updateHeartStateFromApi(data); // API response for use-heart should give remainingHearts
       initializeNewGameAttempt();
     } catch (error) {
       toast({ title: 'Network Error', description: "Could not start game. Check connection.", variant: 'destructive'});
     } finally {
       setIsGameApiLoading(false);
     }
-  }, [currentUser?.id, pooledHearts, nextHeartRegenTime, initializeNewGameAttempt, toast, fetchUserHearts, gameState]);
+  }, [currentUser?.id, pooledHearts, initializeNewGameAttempt, toast, fetchUserHearts, gameState, updateHeartStateFromApi]);
 
 
   const processAttemptOver = useCallback(async () => {
@@ -395,7 +363,7 @@ export default function StakeBuilderGamePage() {
              setCurrentUser(prev => prev ? {...prev, gold_points: data.totalGold} : null);
           }
           if (data.totalDiamonds !== undefined && currentUser) {
-            setCurrentUser(prev => prev ? {...prev, diamond_points: data.totalDiamonds} : null);
+            setCurrentUser(prev => prev ? {...prev, diamond_points: Number(data.totalDiamonds)} : null);
           }
           if (data.isHighScore && finalScore > stakeBuilderHighScore) {
             setStakeBuilderHighScore(finalScore);
@@ -429,13 +397,21 @@ export default function StakeBuilderGamePage() {
     if (gameState !== 'playing' || !currentBlock) return;
 
     const blockHalfWidth = currentBlock.width / 2;
+     // Add a check to ensure the block is somewhat on screen or significantly overlapping for the first drop.
     if (stackedBlocks.length === 1) { // First block being placed on base
-        // Allow wider tolerance for the very first block if needed, or ensure it must overlap significantly
+        const base = stackedBlocks[0];
+        const overlapStartFirst = Math.max(currentBlock.x, base.x);
+        const overlapEndFirst = Math.min(currentBlock.x + currentBlock.width, base.x + base.width);
+        const overlapWidthFirst = Math.max(0, overlapEndFirst - overlapStartFirst);
+        if (overlapWidthFirst < MIN_BLOCK_WIDTH / 3) { // Require some minimal overlap for the very first block
+            processAttemptOver(); // Ends game if first block misses too much
+            return;
+        }
     } else if ((currentBlock.direction === 1 && currentBlock.x < -blockHalfWidth + 10) || 
         (currentBlock.direction === -1 && currentBlock.x + currentBlock.width > gameAreaWidth + blockHalfWidth - 10 )) {
-      // If block is mostly off-screen when dropped (not the first block), consider it a miss / error
-      // This helps prevent game ending if user clicks while block is still spawning far off
-      if(stackedBlocks.length > 1) return; 
+      if(stackedBlocks.length > 1 && currentBlock.x + currentBlock.width < 10 || currentBlock.x > gameAreaWidth - 10) {
+          processAttemptOver(); return;
+      }
     }
 
     setGameState('dropping'); 
@@ -565,7 +541,6 @@ export default function StakeBuilderGamePage() {
     setGameState('ad_viewing');
   }, [adsRevivesUsedThisAttempt, pooledHearts, currentUser?.id, toast]);
 
-  // Effect for Ad Dialog Timer & Processing Reward
   useEffect(() => {
     let adViewTimerId: NodeJS.Timeout | undefined;
     if (gameState === 'ad_viewing' && isAdDialogOpen && adTimer > 0) {
@@ -574,7 +549,6 @@ export default function StakeBuilderGamePage() {
         setAdProgress(prev => Math.min(prev + (100 / AD_REVIVE_DURATION_S), 100));
       }, 1000);
     } else if (gameState === 'ad_viewing' && isAdDialogOpen && adTimer === 0) {
-      // Ad finished
       setIsAdDialogOpen(false); 
       setAdProgress(100);
       
@@ -588,29 +562,29 @@ export default function StakeBuilderGamePage() {
         setIsGameApiLoading(true);
         try {
             if (adPurpose === 'revive_attempt') {
-                // No specific API call for *logging* ad revive, just proceed with game continuation
                 setAdsRevivesUsedThisAttempt(prev => prev + 1);
                 continueCurrentAttempt();
                 toast({ description: "Attempt continued after Ad!", className: "bg-green-600/90 border-green-700 text-white dark:bg-green-700 dark:text-white", duration:2000 });
             } else if (adPurpose === 'gain_pooled_heart') {
-                const res = await fetch('/api/games/reward-ad-heart', { // Assumed endpoint
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: currentUser.id, gameType: GAME_TYPE_IDENTIFIER }),
-                });
-                const data = await res.json();
-                if (data.success && typeof data.hearts === 'number') {
-                    setPooledHearts(data.hearts);
-                    if (data.nextReplenishTime && data.hearts < MAX_POOLED_HEARTS) {
-                        setNextHeartRegenTime(new Date(data.nextReplenishTime).getTime());
-                    } else {
-                         setNextHeartRegenTime(null);
-                    }
+                // TODO: Replace with actual API call to /api/games/reward-ad-heart
+                // For now, simulating success and relying on updateHeartStateFromApi to parse a typical success response
+                console.warn("SIMULATING API call to /api/games/reward-ad-heart. TODO: Implement actual API call.");
+                await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+                const simulatedApiResponse = { 
+                    success: true, 
+                    hearts: { [GAME_TYPE_IDENTIFIER]: Math.min(pooledHearts + 1, MAX_POOLED_HEARTS) }, 
+                    nextReplenishTime: nextHeartRegenTime ? new Date(nextHeartRegenTime).toISOString() : (pooledHearts +1 < MAX_POOLED_HEARTS ? new Date(Date.now() + HEART_REGEN_DURATION_MS).toISOString() : null)
+                };
+                // const res = await fetch('/api/games/reward-ad-heart', { /* ... */ });
+                // const data = await res.json();
+                const data = simulatedApiResponse; // Using simulated response for now
+                if (data.success) {
+                    updateHeartStateFromApi(data);
                     toast({ description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400"/> +1 Heart gained!</span>, duration: 2000 });
-                    setGameState(data.hearts > 0 ? 'idle' : 'waiting_for_hearts');
+                    setGameState( (data.hearts?.[GAME_TYPE_IDENTIFIER] ?? pooledHearts) > 0 ? 'idle' : 'waiting_for_hearts');
                 } else {
-                    toast({ title: "Ad Reward Failed", description: data.error || "Could not grant heart.", variant: "destructive" });
-                    setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts'); // Revert to state based on *current* hearts
+                    toast({ title: "Ad Reward Failed", description: (data as any).error || "Could not grant heart.", variant: "destructive" });
+                    setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
                 }
             }
         } catch (error) {
@@ -626,7 +600,7 @@ export default function StakeBuilderGamePage() {
       processAdReward();
     }
     return () => clearTimeout(adViewTimerId);
-  }, [gameState, isAdDialogOpen, adTimer, adPurpose, currentUser, continueCurrentAttempt, pooledHearts, toast]);
+  }, [gameState, isAdDialogOpen, adTimer, adPurpose, currentUser, continueCurrentAttempt, pooledHearts, toast, updateHeartStateFromApi, nextHeartRegenTime]);
 
 
   const closeAdDialogEarly = useCallback(() => {
@@ -659,20 +633,14 @@ export default function StakeBuilderGamePage() {
     setIsGameApiLoading(true);
     try {
         // TODO: Implement actual API call: /api/games/spend-diamonds-to-continue
-        // const response = await fetch('/api/games/spend-diamonds-to-continue', {
-        //   method: 'POST', headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({ userId: currentUser.id, gameType: GAME_TYPE_IDENTIFIER, cost: DIAMONDS_TO_CONTINUE_ATTEMPT }),
-        // });
-        // const data = await response.json();
-        // if (!data.success) throw new Error(data.error || "Failed to use diamonds on server.");
-        // setCurrentUser(prev => prev ? {...prev, diamond_points: data.newDiamondBalance } : null); // Update from API response
-
-        // --- SIMULATED API CALL START ---
-        await new Promise(resolve => setTimeout(resolve, 500)); 
         console.warn("SIMULATING spending diamonds. TODO: Implement API call to /api/games/spend-diamonds-to-continue");
+        await new Promise(resolve => setTimeout(resolve, 500)); 
         const newDiamondBalance = parseFloat((currentUser.diamond_points - DIAMONDS_TO_CONTINUE_ATTEMPT).toFixed(4));
         setCurrentUser(prev => prev ? {...prev, diamond_points: newDiamondBalance} : null);
-        // --- SIMULATED API CALL END ---
+        // const response = await fetch('/api/games/spend-diamonds-to-continue', { /* ... */ });
+        // const data = await response.json();
+        // if (!data.success) throw new Error(data.error || "Failed to use diamonds on server.");
+        // setCurrentUser(prev => prev ? {...prev, diamond_points: data.newDiamondBalance } : null);
         
         setDiamondContinuesUsedThisAttempt(prev => prev + 1);
         toast({
@@ -690,9 +658,9 @@ export default function StakeBuilderGamePage() {
 
   const handleReturnToMainMenuOrPlayAgain = useCallback(() => { 
     if(pooledHearts > 0) {
-        startGameAttempt(); // If hearts available, directly start new game
+        startGameAttempt();
     } else {
-        setGameState('waiting_for_hearts'); // Otherwise, go to waiting state
+        setGameState('waiting_for_hearts');
     }
   }, [pooledHearts, startGameAttempt]);
 
@@ -706,7 +674,7 @@ export default function StakeBuilderGamePage() {
         <AppShell>
             <div className="flex flex-col items-center justify-center flex-grow w-full bg-gradient-to-br from-slate-900 via-purple-900/50 to-slate-900" style={{ minHeight: `calc(100vh - ${HEADER_HEIGHT_CSS_VAR} - ${BOTTOM_NAV_HEIGHT_CSS_VAR})` }}>
                 <Loader2 className="h-16 w-16 animate-spin text-primary" />
-                <p className="mt-4 text-muted-foreground">Loading Game...</p>
+                <p className="mt-4 text-muted-foreground">Loading Game Data...</p>
             </div>
         </AppShell>
     );
@@ -722,7 +690,6 @@ export default function StakeBuilderGamePage() {
         aria-label={gameState === 'playing' ? "Drop Block" : "Game Area"}
         onKeyDown={(e) => { if ((e.key === ' ' || e.code === 'Space' || e.key === 'Enter') && gameState === 'playing') handleDropBlock(); }}
       >
-          {/* Top Game Stats Bar */}
           <div className="w-full px-2 sm:px-4 py-2 bg-slate-800/80 backdrop-blur-sm shadow-md border-b border-primary/20 z-20">
             <div className="flex justify-between items-center max-w-4xl mx-auto">
                 <div className="flex items-center space-x-1">
@@ -753,7 +720,6 @@ export default function StakeBuilderGamePage() {
             </div>
           </div>
 
-          {/* Game Area Wrapper - Takes remaining flexible space */}
           <div className="flex-grow w-full flex items-center justify-center overflow-hidden p-2 relative">
             <div
                 ref={gameAreaRef} 
@@ -766,12 +732,11 @@ export default function StakeBuilderGamePage() {
                     willChange: 'transform', 
                 }}
             >
-                {/* Stacked blocks container with Y offset */}
                 <div style={{ transform: `translateY(${stackVisualOffsetY}px)`, transition: 'transform 0.3s ease-out', willChange: 'transform', height: '100%' }}>
                 {stackedBlocks.map(block => (
                     <div key={block.id}
                     className={cn("absolute rounded-sm border",
-                        block.isPerfect && "ring-2 ring-yellow-300 ring-offset-1 ring-offset-black/50", // Static ring, no animation
+                        block.isPerfect && "ring-2 ring-yellow-300 ring-offset-1 ring-offset-black/50",
                         block.id === 'base' ? 'border-muted/50' : 'border-border/40'
                     )}
                     style={{ 
@@ -783,7 +748,6 @@ export default function StakeBuilderGamePage() {
                     />
                 ))}
                 </div>
-                {/* Current moving block */}
                 {currentBlock && (gameState === 'playing' || gameState === 'dropping') && (
                 <div className="absolute rounded-sm border border-white/20"
                     style={{ 
@@ -795,7 +759,6 @@ export default function StakeBuilderGamePage() {
                 />
                 )}
 
-                {/* Game State Overlays */}
                 {(gameState === 'idle' || gameState === 'gameover_attempt' || gameState === 'waiting_for_hearts') && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm z-10 p-4 text-center space-y-3 sm:space-y-4">
                     {gameState === 'idle' && (
@@ -875,7 +838,6 @@ export default function StakeBuilderGamePage() {
               </p>
           )}
 
-          {/* Ad Dialog */}
           {isAdDialogOpen && (
             <Dialog open={isAdDialogOpen} onOpenChange={(open) => { if (!open && gameState === 'ad_viewing') closeAdDialogEarly()}}>
               <DialogContent className="sm:max-w-xs bg-slate-800/95 backdrop-blur-md border-slate-700 text-slate-100 shadow-2xl">

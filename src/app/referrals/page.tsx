@@ -9,21 +9,65 @@ import { Copy, Users, Gift, TrendingUp, Share2, Coins, Gem, Loader2 } from "luci
 import { useToast } from "@/hooks/use-toast";
 import type { AppUser } from '@/app/types';
 
+interface ReferredUserSummary {
+  id: string;
+  referred_id?: string;
+  name: string;
+  username: string;
+  joined: string;
+  status: string;
+  // earningsFrom seems to be the referred user's total gold
+  earningsFrom: number; 
+  // Need to clarify if API sends earningsFromDiamonds or if we derive from users.diamond_points
+  earningsFromDiamonds?: number; 
+  last_rewarded_gold: number;
+  last_rewarded_diamond: number;
+  users?: { // Nested user object from the API
+    first_name?: string | null;
+    last_name?: string | null;
+    username?: string | null;
+    gold_points?: number;
+    diamond_points?: number;
+    created_at?: string;
+  }
+}
+
+
 export default function ReferralsPage() {
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [referralCode, setReferralCode] = useState<string>('');
-  const [referrals, setReferrals] = useState<any[]>([]); // Consider defining a more specific type for referred user summary
+  const [referrals, setReferrals] = useState<ReferredUserSummary[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [claimLoading, setClaimLoading] = useState<boolean>(false);
   
-  // For claimable rewards based on referral activity since last claim
-  const [claimableGold, setClaimableGold] = useState<number>(0);
-  const [claimableDiamonds, setClaimableDiamonds] = useState<number>(0);
+  const [pendingClaimableGold, setPendingClaimableGold] = useState<number>(0);
+  const [pendingClaimableDiamonds, setPendingClaimableDiamonds] = useState<number>(0);
 
-  // For total lifetime referral earnings directly from user object
   const [totalLifetimeReferralGold, setTotalLifetimeReferralGold] = useState<number>(0);
   const [totalLifetimeReferralDiamonds, setTotalLifetimeReferralDiamonds] = useState<number>(0);
+
+  const calculateClaimableRewards = useCallback((referralList: ReferredUserSummary[]) => {
+    let goldToClaim = 0;
+    let diamondsToClaim = 0;
+
+    referralList.forEach(ref => {
+      const referredUserCurrentGold = Number(ref.users?.gold_points || ref.earningsFrom || 0);
+      const referredUserCurrentDiamonds = Number(ref.users?.diamond_points || ref.earningsFromDiamonds || 0);
+      const lastRewardedGoldForThisRef = Number(ref.last_rewarded_gold || 0);
+      const lastRewardedDiamondsForThisRef = Number(ref.last_rewarded_diamond || 0);
+
+      const goldDiff = Math.max(0, referredUserCurrentGold - lastRewardedGoldForThisRef);
+      const diamondDiff = Math.max(0, referredUserCurrentDiamonds - lastRewardedDiamondsForThisRef);
+
+      goldToClaim += goldDiff * 0.05;
+      diamondsToClaim += diamondDiff * 0.05;
+    });
+    
+    setPendingClaimableGold(parseFloat(goldToClaim.toFixed(2))); // Max 2 decimal for gold
+    setPendingClaimableDiamonds(parseFloat(diamondsToClaim.toFixed(4))); // Max 4 for diamonds
+  }, []);
+
 
   const fetchReferralData = useCallback(async (userId: string, userTelegramId: string) => {
     try {
@@ -40,32 +84,9 @@ export default function ReferralsPage() {
       if (!referralsData.success) {
         throw new Error(referralsData.error || 'Failed to process referral details.');
       }
-      setReferrals(referralsData.referrals || []);
-
-      // Calculate claimable rewards from the detailed referrals list
-      // This logic assumes `earningsFrom` is current total points of referred user,
-      // and `last_rewarded_gold/diamond` is the points snapshot when last claimed.
-      // The 5% calculation should ideally happen on the backend during claim for security.
-      // For display purposes, we might estimate it here, or the backend /referrals/details could provide claimable amounts.
-      // For simplicity, let's assume `referralsData.referrals` does NOT provide directly claimable amounts,
-      // and the claim API handles the calculation. So, we'll set claimable to 0 or derive from user object if available.
-      // Or, better, the backend for /referrals/details could return a `claimable_gold` and `claimable_diamond` sum.
-      // For now, let's assume the current `goldEarnings` and `diamondEarnings` (now `claimableGold`/`Diamonds`)
-      // were placeholders and the actual claimable amount would be determined by the backend on claim.
-      // We will rely on user's total referral earnings for the new card.
-
-      // If your /api/referrals/details directly provided a sum of pending claimable rewards, you'd use that.
-      // Example: setClaimableGold(referralsData.summary?.pendingGoldToClaim || 0);
-      // For now, these will be set to 0 and the "Collect Rewards" button will enable if backend says there's something to claim,
-      // or if we decide to re-implement the local calculation based on the referrals list.
-      // Let's remove the local calculation for claimable and rely on the claim button to check with backend.
-      // The button text can be generic "Check & Collect Rewards".
-      
-      // Let's assume the `/api/referrals/claim` endpoint returns the amounts if successful,
-      // and `/api/auth/me` or `/api/referrals/details` can give a hint if there are pending rewards.
-      // For now, we'll keep claimable amounts at 0 unless backend gives them.
-      setClaimableGold(0); // This will be updated by a more sophisticated backend or removed.
-      setClaimableDiamonds(0); // This will be updated or removed.
+      const fetchedReferrals = referralsData.referrals || [];
+      setReferrals(fetchedReferrals);
+      calculateClaimableRewards(fetchedReferrals);
 
     } catch (error: any) {
       console.error('Error fetching referral details:', error.message);
@@ -75,7 +96,7 @@ export default function ReferralsPage() {
         variant: 'destructive',
       });
     }
-  }, [toast]);
+  }, [toast, calculateClaimableRewards]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -95,11 +116,12 @@ export default function ReferralsPage() {
         const user = data.user as AppUser;
         setCurrentUser(user);
         setTotalLifetimeReferralGold(Number(user.referral_gold_earned) || 0);
-        // Ensure diamond parsing is robust
-        const diamondVal = parseFloat(user.referral_diamond_earned as any);
+        const diamondVal = parseFloat(user.referral_diamond_earned as any); // referral_diamond_earned might be string from DB
         setTotalLifetimeReferralDiamonds(isNaN(diamondVal) ? 0 : diamondVal);
         
-        await fetchReferralData(user.id!, user.telegram_id);
+        if (user.id && user.telegram_id) {
+            await fetchReferralData(user.id, user.telegram_id);
+        }
 
       } catch (error: any) {
         console.error('Error fetching initial data:', error.message);
@@ -114,6 +136,19 @@ export default function ReferralsPage() {
     };
 
     fetchInitialData();
+     // Listen to global user updates
+    const handleUserUpdate = (event: CustomEvent<AppUser>) => {
+        const updatedUser = event.detail;
+        setCurrentUser(updatedUser);
+         setTotalLifetimeReferralGold(Number(updatedUser.referral_gold_earned) || 0);
+        const diamondVal = parseFloat(updatedUser.referral_diamond_earned as any);
+        setTotalLifetimeReferralDiamonds(isNaN(diamondVal) ? 0 : diamondVal);
+    };
+    window.addEventListener('userUpdated_hustlesoul', handleUserUpdate as EventListener);
+
+    return () => {
+        window.removeEventListener('userUpdated_hustlesoul', handleUserUpdate as EventListener);
+    };
   }, [toast, fetchReferralData]);
 
   const handleCopyCode = () => {
@@ -131,12 +166,17 @@ export default function ReferralsPage() {
         toast({ title: 'Error', description: 'User not identified.', variant: 'destructive'});
         return;
     }
+    if (pendingClaimableGold <= 0 && pendingClaimableDiamonds <= 0) {
+        toast({ title: 'No Rewards', description: 'You have no referral rewards to claim at the moment.', variant: 'default'});
+        return;
+    }
+
     setClaimLoading(true);
     try {
       const res = await fetch('/api/referrals/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ referrer_id: currentUser.id }), // Ensure API uses this key
+        body: JSON.stringify({ referrer_id: currentUser.id }),
       });
 
       const data = await res.json();
@@ -146,23 +186,36 @@ export default function ReferralsPage() {
           title: 'Collected Successfully!',
           description: `You earned ${Number(data.goldEarned || 0).toFixed(2)} GOLD and ${Number(data.diamondEarned || 0).toFixed(4)} DIAMOND.`,
         });
-        // Refresh user data to get updated totals and potentially clear claimable amounts
+        
+        // Update current user's total balances and lifetime referral earnings
+        setCurrentUser(prevUser => {
+            if (!prevUser) return null;
+            const newGold = (Number(prevUser.gold_points) || 0) + (Number(data.goldEarned) || 0);
+            const newDiamonds = (Number(prevUser.diamond_points) || 0) + (Number(data.diamondEarned) || 0);
+            const newRefGold = (Number(prevUser.referral_gold_earned) || 0) + (Number(data.goldEarned) || 0);
+            const newRefDiamonds = (Number(prevUser.referral_diamond_earned) || 0) + (Number(data.diamondEarned) || 0);
+
+            const updatedUser = {
+                ...prevUser,
+                gold_points: newGold,
+                diamond_points: newDiamonds,
+                referral_gold_earned: newRefGold,
+                referral_diamond_earned: newRefDiamonds
+            };
+            // Dispatch event for other components like Header to update
+            window.dispatchEvent(new CustomEvent<AppUser>('userUpdated_hustlesoul', { detail: updatedUser }));
+            return updatedUser;
+        });
+        
+        // Refresh referral list details to update last_rewarded_gold/diamond and recalculate pending
         if (currentUser.id && currentUser.telegram_id) {
-            const userResponse = await fetch('/api/auth/me');
-            const userData = await userResponse.json();
-            if (userData.success && userData.user) {
-                const updatedUser = userData.user as AppUser;
-                setCurrentUser(updatedUser);
-                setTotalLifetimeReferralGold(Number(updatedUser.referral_gold_earned) || 0);
-                const diamondVal = parseFloat(updatedUser.referral_diamond_earned as any);
-                setTotalLifetimeReferralDiamonds(isNaN(diamondVal) ? 0 : diamondVal);
-            }
-            await fetchReferralData(currentUser.id, currentUser.telegram_id); // Refresh referrals list and potential claimable
+            await fetchReferralData(currentUser.id, currentUser.telegram_id); 
         }
+
       } else {
         toast({
           title: 'Claim Error',
-          description: data.error || 'Could not collect referral rewards. You may have no rewards to claim.',
+          description: data.error || 'Could not collect referral rewards.',
           variant: 'destructive',
         });
       }
@@ -178,16 +231,9 @@ export default function ReferralsPage() {
     }
   };
   
-  // A simple check to see if user *might* have claimable rewards.
-  // A more accurate check would involve the backend /referrals/details or a dedicated API.
-  const hasPotentiallyClaimableRewards = referrals.some(r => 
-    (Number(r.earningsFrom || 0) > Number(r.last_rewarded_gold || 0)) ||
-    (Number(r.earningsFromDiamonds || 0) > Number(r.last_rewarded_diamond || 0)) 
-    // This logic is indicative, backend should confirm actual claimable amounts
-  );
+  const canClaimRewards = pendingClaimableGold > 0 || pendingClaimableDiamonds > 0;
 
-
-  if (loading) {
+  if (loading && !currentUser) {
     return (
       <AppShell>
         <div className="flex justify-center items-center h-screen">
@@ -204,7 +250,7 @@ export default function ReferralsPage() {
           <Share2 className="mx-auto h-16 w-16 text-primary mb-4" />
           <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">Referral Program</h1>
           <p className="text-lg text-muted-foreground">
-            Invite friends to HustleSoul. You get a bonus when they join, and earn a percentage of their future activity!
+            Invite friends to HustleSoul. You get a bonus when they join, and earn 5% of their future activity!
           </p>
         </div>
 
@@ -259,43 +305,44 @@ export default function ReferralsPage() {
               <div className="font-headline text-2xl font-bold text-foreground flex items-center gap-1 mt-1">
                 <Gem className="h-6 w-6 text-sky-400"/> {totalLifetimeReferralDiamonds.toFixed(4)}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">total earned from referrals</p>
+              <p className="text-xs text-muted-foreground mt-1">total earned from referrals' activity</p>
             </CardContent>
           </Card>
         </div>
         
-        {/* Claim Rewards Button - shows if there's potentially something to claim or just as a general "check" button */}
         <div className="mb-8">
           <Card className="bg-primary/10 border-primary/50">
             <CardHeader>
               <CardTitle className="font-headline text-xl text-primary">Claim Referral Activity Rewards</CardTitle>
               <CardDescription className="text-primary/80">
-                Collect rewards based on your referred friends' activity. (5% of their earnings)
+                Collect 5% of your referred friends' earnings since your last collection.
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {canClaimRewards ? (
+                <div className="mb-3 text-center">
+                    <p className="text-sm text-foreground">You can claim:</p>
+                    {pendingClaimableGold > 0 && <span className="font-semibold text-yellow-400 text-lg block"><Coins className="inline h-5 w-5 mr-1"/>{pendingClaimableGold.toFixed(2)} Gold</span>}
+                    {pendingClaimableDiamonds > 0 && <span className="font-semibold text-sky-400 text-lg block"><Gem className="inline h-5 w-5 mr-1"/>{pendingClaimableDiamonds.toFixed(4)} Diamonds</span>}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center mb-3">No rewards to claim at the moment.</p>
+              )}
               <Button
                 className="w-full"
                 onClick={handleCollectRewards}
-                disabled={claimLoading}
+                disabled={claimLoading || !canClaimRewards}
                 variant="default"
               >
                 {claimLoading ? (
-                  <>
-                    <Loader2 className="animate-spin mr-2 h-5 w-5" />
-                    Checking & Collecting...
-                  </>
+                  <> <Loader2 className="animate-spin mr-2 h-5 w-5" /> Collecting... </>
                 ) : (
-                  'Collect Activity Rewards'
+                  'Collect Rewards'
                 )}
               </Button>
-              <p className="text-xs text-muted-foreground mt-2 text-center">
-                Note: This claims a percentage of your referrals' earnings since your last collection.
-              </p>
             </CardContent>
           </Card>
         </div>
-
 
         <Card className="shadow-lg">
           <CardHeader>
@@ -309,25 +356,24 @@ export default function ReferralsPage() {
               </div>
             ) : referrals.length > 0 ? (
               <ul className="space-y-3 max-h-96 overflow-y-auto">
-                {referrals.map((userRef, index) => (
+                {referrals.map((userRef) => (
                   <li
-                    key={index}
+                    key={userRef.id || userRef.referred_id}
                     className={`flex items-center justify-between p-3 rounded-md border ${
                       userRef.status === 'active' ? 'bg-green-500/5 border-green-500/30' : 'bg-muted/30 border-border' 
                     }`}
                   >
                     <div>
-                      <p className="font-semibold text-foreground">{userRef.username || userRef.name || `User ${userRef.referred_id?.slice(-4)}`}</p>
-                      <p className="text-xs text-muted-foreground">Joined: {new Date(userRef.joined || userRef.created_at).toLocaleDateString()}</p>
+                      <p className="font-semibold text-foreground">{userRef.users?.username || userRef.users?.first_name || userRef.username || userRef.name || `User ${userRef.referred_id?.slice(-4)}`}</p>
+                      <p className="text-xs text-muted-foreground">Joined: {new Date(userRef.users?.created_at || userRef.joined).toLocaleDateString()}</p>
                     </div>
-                    {/* Displaying referred user's current points, not direct earnings for referrer here */}
                     <div className="text-right">
                         <span className="text-xs font-medium text-yellow-400 flex items-center justify-end gap-1">
-                           <Coins className="h-3 w-3"/> {(Number(userRef.earningsFrom) || 0).toLocaleString()}
+                           <Coins className="h-3 w-3"/> {(Number(userRef.users?.gold_points || userRef.earningsFrom || 0)).toLocaleString()}
                         </span>
-                        {userRef.earningsFromDiamonds !== undefined && (
+                        {(Number(userRef.users?.diamond_points || userRef.earningsFromDiamonds || 0)) > 0 && (
                              <span className="text-xs font-medium text-sky-400 flex items-center justify-end gap-1">
-                                <Gem className="h-3 w-3"/> {(Number(userRef.earningsFromDiamonds) || 0).toFixed(3)}
+                                <Gem className="h-3 w-3"/> {(Number(userRef.users?.diamond_points || userRef.earningsFromDiamonds || 0)).toFixed(3)}
                             </span>
                         )}
                         <p className="text-xs text-muted-foreground">{userRef.status === 'active' ? 'Active' : 'Inactive'}</p>
