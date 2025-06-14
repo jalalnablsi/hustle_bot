@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
         id,
         referred_id,
         status,
+        last_rewarded_gold,
+        last_rewarded_diamond,
         ad_views_count,
         created_at,
 
@@ -47,6 +49,8 @@ export async function GET(req: NextRequest) {
       status: referral.status || 'inactive',
       ad_views_count: referral.ad_views_count || 0,
       earningsFrom: referral.users?.gold_points || 0,
+      last_rewarded_gold: referral.last_rewarded_gold || 0,
+      last_rewarded_diamond: referral.last_rewarded_diamond || 0,
     }));
 
     // Step 3: Return the response
