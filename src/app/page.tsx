@@ -3,13 +3,14 @@
 
 import { AppShell } from "@/components/layout/AppShell";
 import { UserBalanceCard } from "@/components/dashboard/UserBalanceCard";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DailyRewardCard } from "@/components/dashboard/DailyRewardCard";
 import { QuickActionGrid } from "@/components/dashboard/QuickActionGrid";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import type { AppUser } from "@/app/types";
-import { Coins, Gem, PartyPopper, Users } from "lucide-react";
+import { Coins, Gem, PartyPopper, Users, Loader2 } from "lucide-react";
+import { useUser } from "@/contexts/UserContext"; // Import useUser
 
 interface TelegramWebAppUser {
   id: number;
@@ -25,194 +26,141 @@ const WELCOME_BONUS_GOLD = 100;
 const WELCOME_BONUS_DIAMONDS = 1;
 
 export default function DashboardPage() {
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
+  const [initialLoginAttempted, setInitialLoginAttempted] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchOrCreateUser = async () => {
-      setLoading(true);
-      if (typeof window === 'undefined') {
-        setLoading(false);
-        return;
-      }
+  const handleLoginAndUserCreation = useCallback(async () => {
+    if (initialLoginAttempted || (!contextLoadingUser && currentUser)) {
+      // If login already attempted, or user is already loaded from context, don't re-run
+      return;
+    }
+    setInitialLoginAttempted(true);
 
-      let tgUser: TelegramWebAppUser | null = null;
-      let referrerId: string | null = null;
+    let tgUser: TelegramWebAppUser | null = null;
+    let referrerId: string | null = null;
 
+    if (typeof window !== 'undefined') {
       if ((window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
         tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user as TelegramWebAppUser;
         const startParam = (window as any).Telegram.WebApp.initDataUnsafe.start_param;
         if (startParam) {
-            referrerId = startParam;
-            localStorage.setItem('hustlesoul_referrer_id', referrerId); // Store for potential later use if login flow is complex
-            console.log('Referrer ID from Telegram start_param:', referrerId);
+          referrerId = startParam;
+          localStorage.setItem('hustlesoul_referrer_id', referrerId);
         }
       } else {
         const storedMockIdStr = localStorage.getItem('mockTelegramUserId_hustlesoul');
-        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : 7777777; // Consistent Mock Telegram ID for testing
-
-        tgUser = {
-          id: mockId,
-          first_name: 'DevSoul',
-          username: `devsoul${mockId}`,
-        };
-        console.warn("Telegram WebApp not found or no user data, using mock Telegram user:", tgUser);
-        if (!storedMockIdStr) {
-            localStorage.setItem('mockTelegramUserId_hustlesoul', mockId.toString());
-        }
-        // Check for referrer in URL for mock environment
+        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : 8888888; // Consistent Mock ID
+        tgUser = { id: mockId, first_name: 'DevSoul', username: `devsoul${mockId}` };
+        console.warn("Telegram WebApp user not found, using mock Telegram user for /api/login:", tgUser);
+        if (!storedMockIdStr) localStorage.setItem('mockTelegramUserId_hustlesoul', mockId.toString());
+        
         const urlParams = new URLSearchParams(window.location.search);
         const urlReferrerId = urlParams.get('start');
         if (urlReferrerId) {
-            referrerId = urlReferrerId;
-            localStorage.setItem('hustlesoul_referrer_id', referrerId);
-            console.log('Referrer ID from URL (mock env):', referrerId);
+          referrerId = urlReferrerId;
+          localStorage.setItem('hustlesoul_referrer_id', referrerId);
         }
       }
-      
-      // If not found in start_param or URL, check localStorage (e.g. from previous visit)
-      if (!referrerId) {
-        referrerId = localStorage.getItem('hustlesoul_referrer_id');
-      }
+      if (!referrerId) referrerId = localStorage.getItem('hustlesoul_referrer_id');
+    }
 
-
-      if (tgUser) {
-        await fetchUserFromBackend(tgUser, referrerId);
-      } else {
-        setLoading(false);
-        setCurrentUser(null);
-        toast({
-          title: 'Error',
-          description: 'Could not identify Telegram user.',
-          variant: 'destructive',
+    if (tgUser) {
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            telegramId: tgUser.id.toString(),
+            firstName: tgUser.first_name,
+            lastName: tgUser.last_name,
+            username: tgUser.username,
+            referrerTelegramId: referrerId,
+          }),
         });
-      }
-    };
 
-    fetchOrCreateUser();
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Login API request failed: ${response.status}`);
+        }
+        const data = await response.json();
 
-    const handleUserUpdate = (event: CustomEvent<AppUser>) => {
-        setCurrentUser(event.detail);
-    };
-    window.addEventListener('userUpdated_hustlesoul', handleUserUpdate as EventListener);
-
-    return () => {
-        window.removeEventListener('userUpdated_hustlesoul', handleUserUpdate as EventListener);
-    };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchUserFromBackend = async (tgUser: TelegramWebAppUser, referrerTelegramId: string | null) => {
-    try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telegramId: tgUser.id.toString(),
-          firstName: tgUser.first_name,
-          lastName: tgUser.last_name,
-          username: tgUser.username,
-          referrerTelegramId: referrerTelegramId, // Send referrer ID to backend
-        }),
-      });
-
-      if (!response.ok) {
-        let errorBody = `API request failed with status ${response.status}: ${response.statusText}`;
-        try { const errorData = await response.json(); if (errorData && errorData.error) errorBody = errorData.error; } catch (e) {/* ignore */}
-        throw new Error(errorBody);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.user) {
-        const fetchedUser = data.user as AppUser;
-        const isNewUser = data.isNewUser;
-        const referralBonusApplied = data.referralBonusApplied; // Check if backend applied bonus
-
-        const validatedUser: AppUser = {
-          ...fetchedUser,
-          id: fetchedUser.id,
-          telegram_id: fetchedUser.telegram_id || tgUser.id.toString(),
-          first_name: fetchedUser.first_name || tgUser.first_name,
-          username: fetchedUser.username || tgUser.username || null,
-          gold_points: Number(fetchedUser.gold_points) || 0,
-          diamond_points: Number(fetchedUser.diamond_points) || 0,
-          purple_gem_points: Number(fetchedUser.purple_gem_points) || 0,
-          blue_gem_points: Number(fetchedUser.blue_gem_points) || 0,
-          referrals_made: Number(fetchedUser.referrals_made) || 0,
-          initial_free_spin_used: Boolean(fetchedUser.initial_free_spin_used),
-          ad_spins_used_today_count: Number(fetchedUser.ad_spins_used_today_count) || 0,
-          bonus_spins_available: Number(fetchedUser.bonus_spins_available) || 0,
-          last_login: fetchedUser.last_login || new Date().toISOString(),
-          created_at: fetchedUser.created_at || new Date().toISOString(),
-          daily_reward_streak: Number(fetchedUser.daily_reward_streak) || 0,
-          last_daily_reward_claim_at: fetchedUser.last_daily_reward_claim_at || null,
-        };
-
-        if (isNewUser) {
-          // Welcome bonus is now handled by backend during user creation if they are new.
-          // We can show a toast based on isNewUser flag.
-          toast({
-            title: 'Welcome to HustleSoul!',
-            description: (
-              <div className="flex flex-col gap-1">
-                <span>You've received a welcome bonus!</span>
-                <span className="flex items-center">
-                  <Coins className="h-4 w-4 mr-1 text-yellow-500" /> {data.welcomeBonusGold || WELCOME_BONUS_GOLD} Gold
-                </span>
-                <span className="flex items-center">
-                  <Gem className="h-4 w-4 mr-1 text-sky-400" /> {data.welcomeBonusDiamonds || WELCOME_BONUS_DIAMONDS} Diamond
-                </span>
-              </div>
-            ),
-            icon: <PartyPopper className="h-6 w-6 text-primary" />,
-            duration: 7000,
-          });
-
-          if (referralBonusApplied) {
-             toast({
+        if (data.success && data.user) {
+          updateUserSession(data.user); // Update context with user from /api/login
+          if (data.isNewUser) {
+            toast({
+              title: 'Welcome to HustleSoul!',
+              description: (
+                <div className="flex flex-col gap-1">
+                  <span>You've received a welcome bonus!</span>
+                  <span className="flex items-center">
+                    <Coins className="h-4 w-4 mr-1 text-yellow-500" /> {data.welcomeBonusGold || WELCOME_BONUS_GOLD} Gold
+                  </span>
+                  <span className="flex items-center">
+                    <Gem className="h-4 w-4 mr-1 text-sky-400" /> {data.welcomeBonusDiamonds || WELCOME_BONUS_DIAMONDS} Diamond
+                  </span>
+                </div>
+              ),
+              icon: <PartyPopper className="h-6 w-6 text-primary" />,
+              duration: 7000,
+            });
+            if (data.referralBonusApplied) {
+              toast({
                 title: 'Referral Bonus!',
                 description: `You also received a bonus for joining via a referral! Gold: +${data.referralBonusGold}, Spins: +${data.referralBonusSpins}`,
                 icon: <Users className="h-6 w-6 text-primary" />,
                 duration: 6000,
-             });
-             localStorage.removeItem('hustlesoul_referrer_id'); // Clear after successful application
+              });
+              localStorage.removeItem('hustlesoul_referrer_id');
+            }
           }
-
+        } else {
+          throw new Error(data.error || 'Failed to process user data from login API');
         }
-        setCurrentUser(validatedUser);
-        window.dispatchEvent(new CustomEvent<AppUser>('userUpdated_hustlesoul', { detail: validatedUser }));
-      } else {
-        throw new Error(data.error || 'Failed to process user data from API');
+      } catch (error) {
+        console.error('Error in handleLoginAndUserCreation:', error);
+        toast({
+          title: 'Login Error',
+          description: (error as Error).message || 'Could not log in or create user.',
+          variant: 'destructive',
+        });
+        // Attempt to fetch via /api/auth/me as a fallback if login fails but user might exist
+        await fetchUserData(true);
       }
-    } catch (error) {
-      console.error('Error in fetchUserFromBackend:', error);
-      toast({
-        title: 'Error Loading Profile',
-        description: (error as Error).message || 'Could not load your profile data. Using mock data.',
-        variant: 'destructive',
-      });
-      const mockTelegramIdForFallback = tgUser?.id.toString() || localStorage.getItem('mockTelegramUserId_hustlesoul') || "mock_fallback_123";
-      setCurrentUser({
-          id: `mock-uuid-${mockTelegramIdForFallback}`,
-          telegram_id: mockTelegramIdForFallback,
-          first_name: 'DevUser (Offline)',
-          last_name: 'Fallback',
-          username: `devsoul_offline_${mockTelegramIdForFallback}`,
-          gold_points: 500, diamond_points: 5, purple_gem_points: 1, blue_gem_points: 0,
-          referral_link: `https://t.me/HustleSoulBot?start=${mockTelegramIdForFallback}`,
-          referrals_made: 2, initial_free_spin_used: false, ad_spins_used_today_count: 0, bonus_spins_available: 1,
-          last_login: new Date().toISOString(), created_at: new Date().toISOString(),
-          daily_reward_streak: 1, last_daily_reward_claim_at: null,
-      });
-    } finally {
-      setLoading(false);
+    } else {
+      // No Telegram user identifiable, rely on UserContext's initial fetch or show error
+       await fetchUserData(true); // Ensure context tries to load if tgUser was null
+       if (!currentUser && !contextLoadingUser) {
+          toast({ title: 'Error', description: 'Could not identify Telegram user.', variant: 'destructive' });
+       }
     }
-  };
+  }, [contextLoadingUser, currentUser, toast, updateUserSession, fetchUserData, initialLoginAttempted]);
+
+  useEffect(() => {
+    // This effect now primarily triggers the login/creation flow if the context hasn't loaded a user yet.
+    // The UserProvider already calls fetchUserData on mount.
+    // This ensures that if /api/auth/me returns no user (e.g. new user),
+    // we then attempt the /api/login flow.
+    if (!contextLoadingUser && !currentUser && !initialLoginAttempted) {
+      handleLoginAndUserCreation();
+    }
+     if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
+        (window as any).Telegram.WebApp.ready();
+    }
+  }, [contextLoadingUser, currentUser, handleLoginAndUserCreation, initialLoginAttempted]);
 
 
+  if (contextLoadingUser && !initialLoginAttempted) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4">
+            <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
+            <p className="text-muted-foreground">Loading your HustleSoul profile...</p>
+        </div>
+      </AppShell>
+    );
+  }
+  
   return (
     <AppShell>
       <div className="container mx-auto px-4 py-8 space-y-8">
@@ -253,4 +201,3 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
-
