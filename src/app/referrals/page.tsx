@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Copy, Users, Gift, Share2, Coins, Gem, Loader2, BarChartBig, TrendingUp } from "lucide-react";
+import { Copy, Users, Gift, Share2, Coins, Gem, Loader2, BarChartBig, TrendingUp, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from '@/contexts/UserContext';
 import type { AppUser } from '@/app/types';
@@ -17,17 +17,16 @@ interface ReferredUserSummary {
   username: string;
   joined: string;
   status: string;
-  earningsFrom: number; // Represents referred_user_gold_points at time of fetch
-  earningsFromDiamonds?: number; // Represents referred_user_diamond_points at time of fetch
+  earningsFrom: number; 
+  earningsFromDiamonds?: number; 
   last_rewarded_gold: number;
   last_rewarded_diamond: number;
-  // This 'users' sub-object comes directly from Supabase join if you use 'users:referrals_referred_id_fkey(...)'
   users?: {
     first_name?: string | null;
     last_name?: string | null;
     username?: string | null;
-    gold_points?: number;    // Current gold_points of the referred user
-    diamond_points?: number; // Current diamond_points of the referred user
+    gold_points?: number;    
+    diamond_points?: number; 
     created_at?: string;
   }
 }
@@ -52,7 +51,8 @@ export default function ReferralsPage() {
     let diamondsToClaim = 0;
 
     referralList.forEach(ref => {
-      // Prioritize the 'users' sub-object for current points as it's likely more up-to-date from the join
+      if (ref.status !== 'active') return; // Only calculate for active referrals
+
       const referredUserCurrentGold = Number(ref.users?.gold_points ?? ref.earningsFrom ?? 0);
       const referredUserCurrentDiamonds = Number(ref.users?.diamond_points ?? ref.earningsFromDiamonds ?? 0);
       
@@ -62,8 +62,8 @@ export default function ReferralsPage() {
       const goldDiff = Math.max(0, referredUserCurrentGold - lastRewardedGoldForThisRef);
       const diamondDiff = Math.max(0, referredUserCurrentDiamonds - lastRewardedDiamondsForThisRef);
 
-      goldToClaim += goldDiff * 0.05; // 5% commission
-      diamondsToClaim += diamondDiff * 0.05; // 5% commission
+      goldToClaim += goldDiff * 0.05; 
+      diamondsToClaim += diamondDiff * 0.05; 
     });
 
     setPendingClaimableGold(parseFloat(goldToClaim.toFixed(2)));
@@ -74,7 +74,7 @@ export default function ReferralsPage() {
   const fetchReferralDetailsAndCalculate = useCallback(async (userId: string, userTelegramId: string) => {
     setIsFetchingReferralDetails(true);
     try {
-      const referralLink = `https://t.me/HustleSoulBot?start=${userTelegramId}`;
+      const referralLink = currentUser?.referral_link || `https://t.me/HustleSoulBot?start=${userTelegramId}`;
       setReferralCode(referralLink);
 
       const referralsResponse = await fetch(`/api/referrals/details?referrer_id=${userId}`);
@@ -100,7 +100,7 @@ export default function ReferralsPage() {
     } finally {
       setIsFetchingReferralDetails(false);
     }
-  }, [toast, calculateClaimableRewards]);
+  }, [toast, calculateClaimableRewards, currentUser?.referral_link]);
 
   useEffect(() => {
     if (currentUser?.id && currentUser.telegram_id) {
@@ -148,15 +148,16 @@ export default function ReferralsPage() {
         });
 
         updateUserSession({
-            gold_points: data.totalGold, // API returns new total gold
-            diamond_points: data.totalDiamonds, // API returns new total diamonds
+            gold_points: data.totalGold, 
+            diamond_points: data.totalDiamonds, 
             referral_gold_earned: (totalLifetimeReferralGold + goldEarned),
             referral_diamond_earned: (totalLifetimeReferralDiamonds + diamondEarned),
         });
 
+        // Re-fetch details to update last_rewarded_... values for future calculations
         if (currentUser.id && currentUser.telegram_id) {
             await fetchReferralDetailsAndCalculate(currentUser.id, currentUser.telegram_id);
-        } else { // Fallback if telegram_id isn't immediately available from context for some reason
+        } else { 
             setPendingClaimableGold(0);
             setPendingClaimableDiamonds(0);
         }
@@ -198,38 +199,38 @@ export default function ReferralsPage() {
             <CardDescription>Share this link. Your Telegram ID is your code.</CardDescription>
           </CardHeader>
           <CardContent className="flex items-center space-x-2">
-            <Input type="text" value={currentUser?.referral_link || referralCode} readOnly className="text-sm sm:text-base font-mono bg-muted/30" />
-            <Button onClick={handleCopyCode} variant="outline" size="icon" aria-label="Copy referral code" disabled={!currentUser?.referral_link && !referralCode}> <Copy className="h-5 w-5" /> </Button>
+            <Input type="text" value={referralCode} readOnly className="text-sm sm:text-base font-mono bg-muted/30" />
+            <Button onClick={handleCopyCode} variant="outline" size="icon" aria-label="Copy referral code" disabled={!referralCode}> <Copy className="h-5 w-5" /> </Button>
           </CardContent>
            <CardFooter>
-             <a  href={`https://t.me/share/url?url=${encodeURIComponent(currentUser?.referral_link || referralCode)}&text=${encodeURIComponent("Join HustleSoul and earn rewards!")}`} target="_blank" rel="noopener noreferrer" className="w-full">
-                <Button className="w-full" size="lg" disabled={!currentUser?.referral_link && !referralCode}> <Share2 className="mr-2 h-5 w-5" /> Share on Telegram </Button>
+             <a  href={`https://t.me/share/url?url=${encodeURIComponent(referralCode)}&text=${encodeURIComponent("Join HustleSoul and earn rewards!")}`} target="_blank" rel="noopener noreferrer" className="w-full">
+                <Button className="w-full" size="lg" disabled={!referralCode}> <Share2 className="mr-2 h-5 w-5" /> Share on Telegram </Button>
             </a>
           </CardFooter>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card className="shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Friends Joined</CardTitle>
               <Users className="h-5 w-5 text-accent" />
             </CardHeader>
             <CardContent>
-              <div className="font-headline text-3xl font-bold text-foreground">{referrals.length}</div>
-              <p className="text-xs text-muted-foreground">active referrals</p>
+              <div className="font-headline text-3xl font-bold text-foreground">{referrals.filter(r => r.status === 'active').length}</div>
+              <p className="text-xs text-muted-foreground">active referrals ({referrals.length} total)</p>
             </CardContent>
           </Card>
-           <Card className="shadow-lg">
+           <Card className="shadow-lg md:col-span-2">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Lifetime Referral Earnings</CardTitle>
               <TrendingUp className="h-5 w-5 text-green-500" />
             </CardHeader>
-            <CardContent className="space-y-1">
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="font-headline text-xl font-bold text-foreground flex items-center gap-1.5">
-                    <Coins className="h-5 w-5 text-yellow-400"/> {totalLifetimeReferralGold.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                    <Coins className="h-5 w-5 text-yellow-400"/> {totalLifetimeReferralGold.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} <span className="text-xs text-muted-foreground ml-1">GOLD</span>
                 </div>
                  <div className="font-headline text-xl font-bold text-foreground flex items-center gap-1.5">
-                    <Gem className="h-5 w-5 text-sky-400"/> {totalLifetimeReferralDiamonds.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                    <Gem className="h-5 w-5 text-sky-400"/> {totalLifetimeReferralDiamonds.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })} <span className="text-xs text-muted-foreground ml-1">DIAMOND</span>
                 </div>
             </CardContent>
           </Card>
@@ -238,23 +239,31 @@ export default function ReferralsPage() {
         <div className="mb-8">
           <Card className="bg-primary/10 border-primary/50 shadow-lg">
             <CardHeader>
-              <CardTitle className="font-headline text-xl text-primary">Claim Activity Rewards</CardTitle>
-              <CardDescription className="text-primary/80"> Collect 5% of referred friends' earnings since last collection. </CardDescription>
+              <CardTitle className="font-headline text-xl text-primary">Claim Referral Activity Rewards</CardTitle>
+              <CardDescription className="text-primary/80"> Collect 5% of active referred friends' earnings since your last collection. </CardDescription>
             </CardHeader>
             <CardContent>
               {isFetchingReferralDetails && !canClaimRewards ? (
                  <div className="flex justify-center items-center py-3"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
               ): canClaimRewards ? (
                 <div className="mb-3 text-center space-y-1">
-                    <p className="text-sm text-foreground">Pending to claim:</p>
+                    <p className="text-sm text-foreground">Ready to collect:</p>
                     {pendingClaimableGold > 0 && <span className="font-semibold text-yellow-400 text-lg block"><Coins className="inline h-5 w-5 mr-1"/>{pendingClaimableGold.toFixed(2)} Gold</span>}
                     {pendingClaimableDiamonds > 0 && <span className="font-semibold text-sky-400 text-lg block"><Gem className="inline h-5 w-5 mr-1"/>{pendingClaimableDiamonds.toFixed(4)} Diamonds</span>}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center mb-3">No rewards to claim from recent activity.</p>
+                <p className="text-sm text-muted-foreground text-center mb-3">No new rewards to claim from recent referral activity.</p>
               )}
-              <Button className="w-full" onClick={handleCollectRewards} disabled={claimLoading || !canClaimRewards || isFetchingReferralDetails} variant="default" size="lg">
-                {claimLoading ? ( <><Loader2 className="animate-spin mr-2 h-5 w-5" /> Collecting...</> ) : ( 'Collect Now' )}
+              <Button 
+                className="w-full" 
+                onClick={handleCollectRewards} 
+                disabled={claimLoading || !canClaimRewards || isFetchingReferralDetails} 
+                variant={canClaimRewards ? "default" : "secondary"}
+                size="lg"
+              >
+                {claimLoading ? ( <><Loader2 className="animate-spin mr-2 h-5 w-5" /> Collecting...</> ) : 
+                 canClaimRewards ? `Collect ${pendingClaimableGold > 0 ? pendingClaimableGold.toFixed(2) + 'G' : ''} ${pendingClaimableDiamonds > 0 ? (pendingClaimableGold > 0 ? ' & ' : '') + pendingClaimableDiamonds.toFixed(4) + 'D' : ''}` : 'Nothing to Collect Yet'
+                }
               </Button>
             </CardContent>
           </Card>
@@ -263,7 +272,7 @@ export default function ReferralsPage() {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl text-foreground">Your Referrals</CardTitle>
-            <CardDescription>Users who joined via your link.</CardDescription>
+            <CardDescription>Users who joined via your link. Only active referrals generate ongoing earnings.</CardDescription>
           </CardHeader>
           <CardContent>
             {isFetchingReferralDetails ? (
@@ -272,7 +281,7 @@ export default function ReferralsPage() {
               <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
                 {referrals.map((userRef) => (
                   <li key={userRef.id || userRef.referred_id}
-                    className={`flex items-center justify-between p-3 rounded-md border ${ userRef.status === 'active' ? 'bg-green-500/10 border-green-500/40' : 'bg-muted/40 border-border' }`}>
+                    className={`flex items-center justify-between p-3 rounded-md border ${ userRef.status === 'active' ? 'bg-green-500/10 border-green-500/40' : 'bg-muted/40 border-border opacity-70' }`}>
                     <div>
                       <p className="font-semibold text-foreground">{userRef.users?.username || userRef.users?.first_name || userRef.username || userRef.name || `User ${userRef.referred_id?.slice(-4)}`}</p>
                       <p className="text-xs text-muted-foreground">Joined: {new Date(userRef.users?.created_at || userRef.joined).toLocaleDateString()}</p>
@@ -288,7 +297,10 @@ export default function ReferralsPage() {
                 ))}
               </ul>
             ) : (
-              <p className="text-muted-foreground text-center py-6">No referrals yet. Start sharing your link!</p>
+              <div className="text-center py-6">
+                 <AlertTriangle className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
+                <p className="text-muted-foreground text-center">No referrals yet. Start sharing your link!</p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -296,3 +308,5 @@ export default function ReferralsPage() {
     </AppShell>
   );
 }
+
+    

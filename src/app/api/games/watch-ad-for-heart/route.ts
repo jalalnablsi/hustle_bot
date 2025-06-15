@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+// ⚙️ تعريف الثابت هنا ← مهم جدًا
+const MAX_POOLED_HEARTS = 5;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -13,7 +16,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. جلب بيانات المستخدم ← لا يمكن التلاعب
+    // Step 1: جلب بيانات المستخدم ← لا يمكن التلاعب
     const { data: user, error: fetchUserError } = await supabaseAdmin
       .from('users')
       .select('*')
@@ -27,9 +30,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. التحقق من الحد الأقصى للمشاهدات اليومية ← لا يمكن التلاعب
-    const dailyAdViewsLimit = user.daily_ad_views_limit || 50;
-    const adViewsToday = user.ad_views_today_count || 0;
+    // Step 2: التحقق من الحد اليومي ← لا يمكن التلاعب
+    const dailyAdViewsLimit = Number(user.daily_ad_views_limit) || 50;
+    const adViewsToday = Number(user.ad_views_today_count) || 0;
 
     if (adViewsToday >= dailyAdViewsLimit) {
       return new Response(
@@ -38,9 +41,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. الحصول على القلوب الحالية ← لا يمكن التلاعب
+    // Step 3: الحصول على القلوب ← لا يمكن التلاعب
     const gameType = 'stake-builder';
-    const currentHearts = user.game_hearts?.[gameType] ?? 0;
+    const gameHeartsRaw = user.game_hearts; // jsonb
+    const currentHearts = typeof gameHeartsRaw === 'object' && gameHeartsRaw !== null
+      ? Number(gameHeartsRaw[gameType]) || 0
+      : 0;
 
     if (currentHearts >= MAX_POOLED_HEARTS) {
       return new Response(
@@ -49,23 +55,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. زيادة القلوب ← لا يمكن التلاعب
-    const updatedHearts = { ...user.game_hearts };
-    updatedHearts[gameType] = currentHearts + 1;
+    // Step 4: تحديث القلوب ← لا يمكن التلاعب
+    const updatedGameHearts = { ...gameHeartsRaw };
+    updatedGameHearts[gameType] = currentHearts + 1;
 
-    // 5. زيادة عدد مشاهدات الإعلانات ← لا يمكن التلاعب
+    // Step 5: زيادة عدد المشاهدات ← لا يمكن التلاعب
     const updatedAdViewsCount = adViewsToday + 1;
 
-    // 6. تحديث بيانات المستخدم ← لا يمكن التلاعب
-    await supabaseAdmin
+    // Step 6: تحديث رصيد المستخدم ← لا يمكن التلاعب
+    const { error: updateError } = await supabaseAdmin
       .from('users')
       .update({
-        game_hearts: updatedHearts,
+        game_hearts: updatedGameHearts,
         ad_views_today_count: updatedAdViewsCount,
       })
       .eq('id', userId);
 
-    // 7. تسجيل المشاهدة ← لا يمكن التلاعب
+    if (updateError) throw updateError;
+
+    // Step 7: تسجيل المشاهدة ← لا يمكن التلاعب
     await supabaseAdmin.from('ad_views_log').insert({
       purpose: 'heart_regeneration',
       user_id: userId,
@@ -79,8 +87,7 @@ export async function POST(req: NextRequest) {
       JSON.stringify({
         success: true,
         message: 'You earned a heart by watching an ad.',
-        hearts: updatedHearts,
-        nextReplenishTime: null, // لأننا لا نعتمد على التجديد الزمني
+        hearts: updatedGameHearts,
         adViewsToday: updatedAdViewsCount,
         adViewsRemaining: Math.max(0, dailyAdViewsLimit - updatedAdViewsCount),
       }),

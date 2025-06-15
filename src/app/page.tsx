@@ -9,8 +9,8 @@ import { QuickActionGrid } from "@/components/dashboard/QuickActionGrid";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import type { AppUser } from "@/app/types";
-import { Coins, Gem, PartyPopper, Users, Loader2 } from "lucide-react";
-import { useUser } from "@/contexts/UserContext"; // Import useUser
+import { Coins, Gem, PartyPopper, Users, Loader2, Megaphone } from "lucide-react";
+import { useUser } from "@/contexts/UserContext"; 
 
 interface TelegramWebAppUser {
   id: number;
@@ -32,7 +32,6 @@ export default function DashboardPage() {
 
   const handleLoginAndUserCreation = useCallback(async () => {
     if (initialLoginAttempted || (!contextLoadingUser && currentUser)) {
-      // If login already attempted, or user is already loaded from context, don't re-run
       return;
     }
     setInitialLoginAttempted(true);
@@ -50,8 +49,8 @@ export default function DashboardPage() {
         }
       } else {
         const storedMockIdStr = localStorage.getItem('mockTelegramUserId_hustlesoul');
-        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : 8888888; // Consistent Mock ID
-        tgUser = { id: mockId, first_name: 'DevSoul', username: `devsoul${mockId}` };
+        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : Math.floor(100000000 + Math.random() * 900000000);
+        tgUser = { id: mockId, first_name: 'DevSoul', username: `devsoul${mockId.toString().slice(0,5)}` };
         console.warn("Telegram WebApp user not found, using mock Telegram user for /api/login:", tgUser);
         if (!storedMockIdStr) localStorage.setItem('mockTelegramUserId_hustlesoul', mockId.toString());
         
@@ -86,7 +85,7 @@ export default function DashboardPage() {
         const data = await response.json();
 
         if (data.success && data.user) {
-          updateUserSession(data.user); // Update context with user from /api/login
+          updateUserSession(data.user); 
           if (data.isNewUser) {
             toast({
               title: 'Welcome to HustleSoul!',
@@ -124,12 +123,10 @@ export default function DashboardPage() {
           description: (error as Error).message || 'Could not log in or create user.',
           variant: 'destructive',
         });
-        // Attempt to fetch via /api/auth/me as a fallback if login fails but user might exist
         await fetchUserData(true);
       }
     } else {
-      // No Telegram user identifiable, rely on UserContext's initial fetch or show error
-       await fetchUserData(true); // Ensure context tries to load if tgUser was null
+       await fetchUserData(true); 
        if (!currentUser && !contextLoadingUser) {
           toast({ title: 'Error', description: 'Could not identify Telegram user.', variant: 'destructive' });
        }
@@ -137,10 +134,6 @@ export default function DashboardPage() {
   }, [contextLoadingUser, currentUser, toast, updateUserSession, fetchUserData, initialLoginAttempted]);
 
   useEffect(() => {
-    // This effect now primarily triggers the login/creation flow if the context hasn't loaded a user yet.
-    // The UserProvider already calls fetchUserData on mount.
-    // This ensures that if /api/auth/me returns no user (e.g. new user),
-    // we then attempt the /api/login flow.
     if (!contextLoadingUser && !currentUser && !initialLoginAttempted) {
       handleLoginAndUserCreation();
     }
@@ -150,7 +143,7 @@ export default function DashboardPage() {
   }, [contextLoadingUser, currentUser, handleLoginAndUserCreation, initialLoginAttempted]);
 
 
-  if (contextLoadingUser && !initialLoginAttempted) {
+  if (contextLoadingUser && !currentUser && !initialLoginAttempted) { // Show loader if context is loading AND user not set AND login not yet attempted
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4">
@@ -189,11 +182,16 @@ export default function DashboardPage() {
 
         <Card className="mt-8 bg-card/70">
           <CardHeader>
-            <CardTitle className="font-headline text-xl">Announcements</CardTitle>
-            <CardDescription>Latest updates from the HustleSoul team.</CardDescription>
+            <CardTitle className="font-headline text-xl text-foreground flex items-center gap-2">
+              <Megaphone className="h-6 w-6 text-accent" />
+              Advertisement Banner
+            </CardTitle>
+            <CardDescription>Sponsored content or important announcements could go here.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">No new announcements right now. Check back soon for exciting news & events!</p>
+            <div className="aspect-video bg-muted/50 rounded-lg flex items-center justify-center border border-dashed border-border">
+              <p className="text-muted-foreground text-sm">Your Ad Content Here</p>
+            </div>
           </CardContent>
         </Card>
 
@@ -201,3 +199,5 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
+
+    

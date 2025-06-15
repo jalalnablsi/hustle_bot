@@ -3,10 +3,10 @@
 
 import { useEffect, useState } from 'react';
 import { AppShell } from "@/components/layout/AppShell";
-import { TaskItem, type Task } from "@/components/tasks/TaskItem"; // Task type is now exported from TaskItem
+import { TaskItem, type Task } from "@/components/tasks/TaskItem"; 
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from '@/contexts/UserContext';
-import { Loader2, ListChecks, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, ListChecks, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 export default function TasksPage() {
@@ -18,24 +18,22 @@ export default function TasksPage() {
 
   useEffect(() => {
     const loadTasks = async () => {
-      if (!currentUser?.id && !contextLoadingUser) { // Don't fetch if no user and not loading user
+      if (!currentUser?.id && !contextLoadingUser) { 
         setIsLoadingTasks(false);
-        // setErrorLoadingTasks("User not identified. Cannot load tasks."); // Optional: show error if user is a hard requirement
         return;
       }
       setIsLoadingTasks(true);
       setErrorLoadingTasks(null);
       try {
-        const res = await fetch('/api/tasks'); // API should use cookie or UserContext for userId if needed
+        const res = await fetch('/api/tasks'); 
         const data = await res.json();
 
         if (!data.success) {
           throw new Error(data.error || 'Could not load tasks from server.');
         }
-        // Map icon string from API to actual Lucide components if needed, or TaskItem handles it
         setTasks(data.tasks.map((task: any) => ({
             ...task,
-            // Example: platform: task.platform (TaskItem can map this to an icon)
+            icon: task.platform, // Pass platform string, TaskItem will map to icon
         })));
       } catch (error: any) {
         console.error('Error loading tasks:', error.message);
@@ -45,7 +43,6 @@ export default function TasksPage() {
         setIsLoadingTasks(false);
       }
     };
-    // Only load tasks if user is available or context is done loading (and might set a user)
     if (!contextLoadingUser) {
         loadTasks();
     }
@@ -59,7 +56,9 @@ export default function TasksPage() {
     const taskToComplete = tasks.find(t => t.id === taskId);
     if (!taskToComplete || taskToComplete.isCompleted) return;
 
-    setIsLoadingTasks(true); // Indicate task submission attempt
+    // For tasks page, we might not need a global loading state for individual task submission
+    // TaskItem itself handles its own 'isCompleting' state.
+    // setIsLoadingTasks(true); 
     try {
         const payload: { userId: string; taskId: string; userInput?: string } = {
             userId: currentUser.id,
@@ -93,7 +92,7 @@ export default function TasksPage() {
     } catch (error: any) {
         toast({ title: "Task Completion Failed", description: error.message, variant: "destructive" });
     } finally {
-        setIsLoadingTasks(false);
+        // setIsLoadingTasks(false);
     }
   };
 
@@ -101,7 +100,7 @@ export default function TasksPage() {
   const totalTasks = tasks.length;
   const progressPercentage = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
 
-  if (contextLoadingUser) {
+  if (contextLoadingUser && !currentUser) { // Show loader only if context is loading AND user is not yet available
     return (
         <AppShell>
             <div className="flex justify-center items-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))]">
@@ -115,7 +114,7 @@ export default function TasksPage() {
     <AppShell>
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-8">
-            <ListChecks className="mx-auto h-16 w-16 text-primary mb-4" />
+            <ListChecks className="mx-auto h-16 w-16 text-primary mb-4 filter drop-shadow-[0_2px_8px_hsl(var(--primary)/0.4)]" />
             <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">Engage & Earn</h1>
             <p className="text-lg text-muted-foreground"> Complete social tasks to earn HustleSoul tokens. More tasks added regularly! </p>
         </div>
@@ -133,7 +132,7 @@ export default function TasksPage() {
           )}
         </div>
 
-        {isLoadingTasks && !errorLoadingTasks && (
+        {isLoadingTasks && !errorLoadingTasks && ( // This loader is for the initial task list fetch
           <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
         )}
         {errorLoadingTasks && !isLoadingTasks && (
@@ -146,7 +145,7 @@ export default function TasksPage() {
         {!isLoadingTasks && !errorLoadingTasks && tasks.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {tasks.map((task) => (
-              <TaskItem key={task.id} task={task} onComplete={handleCompleteTask} disabled={isLoadingTasks} />
+              <TaskItem key={task.id} task={task} onComplete={handleCompleteTask} />
             ))}
           </div>
         )}
@@ -161,3 +160,5 @@ export default function TasksPage() {
     </AppShell>
   );
 }
+
+    

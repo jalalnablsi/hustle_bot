@@ -12,84 +12,126 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1. الحصول على أعلى رصيد ذهب ← لا يمكن التلاعب
-    const { data: topGoldUsers, error: goldError } = await supabaseAdmin
+    const tgUser = JSON.parse(tgUserStr);
+    const currentTelegramId = tgUser.id.toString();
+
+    // 1. الحصول على بيانات المستخدم ← لا يمكن التلاعب
+    const { data: currentUserData, error: fetchCurrentUserError } = await supabaseAdmin
       .from('users')
-      .select('id, username, gold_points, telegram_id')
-      .order('gold_points', { ascending: false })
-      .limit(5);
+      .select('*')
+      .eq('telegram_id', currentTelegramId)
+      .single();
 
-    if (goldError) throw goldError;
+    if (fetchCurrentUserError || !currentUserData) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'User not found.' }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // 2. الحصول على أعلى سكور ← لا يمكن التلاعب
-    const { data: topScores, error: scoreError } = await supabaseAdmin
-      .from('user_game_sessions')
+    const currentUserId = currentUserData.id;
+    const GAME_TYPE_IDENTIFIER = 'stake-builder';
+
+    // 2. جلب أعلى سكور ← لا يمكن التلاعب
+    const { data: highScoresData, error: scoreError } = await supabaseAdmin
+      .from('user_high_scores')
       .select(`
         user_id,
-        score,
+        high_score,
         users!inner (
           username,
           telegram_id
         )
       `)
-      .eq('game_type', 'stake-builder')
-      .order('score', { ascending: false })
-      .limit(5);
+      .eq('game_type', GAME_TYPE_IDENTIFIER)
+      .order('high_score', { ascending: false })
+      .limit(100);
 
     if (scoreError) throw scoreError;
 
-    // 3. الحصول على أعلى إحالات نشطة ← لا يمكن التلاعب
-    const { data: topReferrers, error: referralsError } = await supabaseAdmin
+    // 3. جلب أعلى رصيد ذهب ← لا يمكن التلاعب
+    const { data: topGoldUsers, error: goldError } = await supabaseAdmin
+      .from('users')
+      .select('id, username, gold_points, telegram_id')
+      .gt('gold_points', 0)
+      .order('gold_points', { ascending: false })
+      .limit(100);
+
+    if (goldError) throw goldError;
+
+    // 4. جلب أعلى إحالات نشطة ← لا يمكن التلاعب
+    const { data: activeReferrals, error: referralsError } = await supabaseAdmin
       .from('referrals')
-      .select(`
-        referrer_id,
-        users!inner (
-          username,
-          telegram_id,
-          id
-        )
-      `)
-      .eq('status', 'active')
-      .order('referred_id', { foreignTable: 'users', ascending: false })
-      .limit(5);
+      .select('referrer_id')
+      .eq('status', 'active');
 
     if (referralsError) throw referralsError;
 
-    // 4. تحويل البيانات إلى تنسيق واضح ← لا يمكن التلاعب
-    const formattedGoldLeaders = topGoldUsers.map(user => ({
-      rank: 0, // سيتم حساب الرتب لاحقًا في الواجهة الأمامية
-      username: user.username || `User ${user.telegram_id.slice(-4)}`,
-      points: Number(user.gold_points).toFixed(0),
+    // 5. حساب عدد الإحالات لكل مستخدم ← لا يمكن التلاعب
+    const referralCounts: Record<string, number> = {};
+    activeReferrals.forEach(referral => {
+      referralCounts[referral.referrer_id] = (referralCounts[referral.referrer_id] || 0) + 1;
+    });
+
+    // تحويل إلى مصفوفة ← لا يمكن التلاعب
+    const referralArray = Object.entries(referralCounts).map(([id, count]) => ({
+      id,
+      count,
+      username: topGoldUsers.find(u => u.id === id)?.username || `User ${id.slice(-4)}`,
     }));
 
-    const formattedScoreLeaders = topScores.map(session => ({
-      rank: 0,
-      username: session.users?.username || `Player ${session.user_id.slice(-4)}`,
-      points: session.score,
-    }));
+    // ترتيب الإحالات ← لا يمكن التلاعب
+    referralArray.sort((a, b) => b.count - a.count).splice(100);
 
-    const formattedReferralLeaders = topReferrers.reduce((acc, referral) => {
-      const existing = acc.find(u => u.id === referral.referrer_id);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        acc.push({
-          id: referral.referrer_id,
-          username: referral.users?.username || `User ${referral.referrer_id.slice(-4)}`,
-          count: 1,
-        });
-      }
-      return acc;
-    }, [] as Array<{ id: string; username: string; count: number }>);
+    // 6. حساب رتبة المستخدم ← لا يمكن التلاعب
+    const calculateRank = async (table: string, column: string, value: number) => {
+      const { count } = await supabaseAdmin
+        .from(table)
+        .select('*', { count: 'exact', head: true })
+        .gt(column, value);
 
-    // 5. إرجاع البيانات ← لا يمكن التلاعب
+      return count ? count + 1 : 1;
+    };
+
+    const userScoreRes = await supabaseAdmin
+      .from('user_high_scores')
+      .select('high_score')
+      .eq('user_id', currentUserId)
+      .eq('game_type', GAME_TYPE_IDENTIFIER)
+      .maybeSingle();
+
+    const userHighScore = userScoreRes.data?.high_score || 0;
+
+    const userGoldRank = await calculateRank('users', 'gold_points', currentUserData.gold_points);
+    const userReferralRank = await calculateRank('referrals', 'referrer_id', currentUserId);
+
+    const userScoreRank = await calculateRank('user_high_scores', 'high_score', userHighScore);
+
     return new Response(
       JSON.stringify({
         success: true,
         data: {
-          top_gold: formattedGoldLeaders,
-          top_scores: formattedScoreLeaders,
-          top_referrals: formattedReferralLeaders,
+          top_scores: highScoresData.map((entry, index) => ({
+            rank: index + 1,
+            username: entry.users?.username || `Player ${entry.user_id.slice(-4)}`,
+            points: entry.high_score,
+          })),
+          top_gold: topGoldUsers.map((user, index) => ({
+            rank: index + 1,
+            username: user.username || `User ${user.telegram_id.slice(-4)}`,
+            points: Number(user.gold_points).toFixed(0),
+          })),
+          top_referrals: referralArray.map((referral, index) => ({
+            rank: index + 1,
+            username: referral.username,
+            points: referral.count,
+          })),
+          user_rank: {
+            gold: userGoldRank,
+            referrals: userReferralRank,
+            scores: userScoreRank,
+            scoreValue: userHighScore,
+          },
         },
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }

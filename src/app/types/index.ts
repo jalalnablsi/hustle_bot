@@ -8,13 +8,11 @@ export interface UserPaymentSettings {
   network?: 'polygon' | 'trc20';
 }
 
-// Defines the structure for a specific game's heart state, e.g., within a user's `game_hearts` JSONB field
 export interface GameSpecificHeartState {
   count: number;
-  nextRegen: string | null; // ISO timestamp for the next regeneration time for this specific game
+  nextRegen: string | null; 
 }
-// Defines the overall structure for game hearts if stored as a map in the user object
-export type GameHearts = Record<string, GameSpecificHeartState>; // e.g. { 'stake-builder': { count: 3, nextRegen: '...' } }
+export type GameHearts = Record<string, GameSpecificHeartState>; 
 
 
 export interface User {
@@ -29,9 +27,12 @@ export interface User {
   blue_gem_points?: number;
   referral_link: string;
   referrals_made: number;
-  initial_free_spin_used: boolean; // For wheel
-  ad_spins_used_today_count: number; // For wheel ads
-  bonus_spins_available: number; // For wheel
+  referral_gold_earned?: number; // Added for total referral earnings
+  referral_diamond_earned?: number; // Added for total referral earnings
+  initial_free_spin_used: boolean; 
+  ad_spins_used_today_count: number; 
+  ad_views_today_count?: number; // General ad views if different from spin ads
+  bonus_spins_available: number; 
   last_login: string; 
   created_at: string; 
 
@@ -40,22 +41,13 @@ export interface User {
   payment_settings?: UserPaymentSettings;
   payment_wallet_address?: string | null; 
   payment_network?: string | null; 
-  daily_ad_views_limit?: number; // General ad view limit, might be per feature
+  daily_ad_views_limit?: number; 
 
-  // Game-specific stats examples (can be in a JSONB field 'game_stats' or similar)
-  // For Stake Builder:
   stake_builder_high_score?: number;
-  // Hearts for games like Stake Builder could be managed via a 'game_hearts' field of type GameHearts
-  // e.g., user.game_hearts = { 'stake-builder': { count: 3, nextRegen: 'ISO_STRING' } }
-  // Or, if your Supabase schema has specific columns (less flexible but simpler for one game):
-  // stake_builder_hearts?: number; 
-  // stake_builder_last_heart_regen?: string; // ISO string
-
-  game_hearts?: GameHearts; // More flexible for multiple games
-  last_heart_replenished?: string; // Could be a global last replenish check time or game-specific if in GameHearts
+  game_hearts?: GameHearts; 
+  last_heart_replenished?: string; 
 
 
-  // Firestore specific fields if directly mapping from Firestore user docs (can be removed if not using Firestore)
   telegramId?: string; 
   telegramUsername?: string;
   firstName?: string;
@@ -113,7 +105,10 @@ export interface LeaderboardEntry {
   points: number; 
   avatarUrl?: string;
   dataAiHint?: string;
-  telegram_id: string; 
+  telegram_id?: string; // Ensure this is present for linking or identifying user
+  // If API provides 'score' or 'count' specifically, they can be added or points can be generic
+  score?: number;
+  count?: number; 
 }
 
 export interface WheelPrize {
@@ -206,6 +201,6 @@ export interface ExternalGame {
   created_by?: string; 
   created_at?: string | Timestamp;
 }
-
+    
 
     
