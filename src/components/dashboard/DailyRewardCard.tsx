@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Gift, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
+import { useUser } from '@/contexts/UserContext';
 export function DailyRewardCard() {
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession } = useUser();
   const [isClaimedToday, setIsClaimedToday] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
   const { toast } = useToast();
@@ -38,16 +39,56 @@ export function DailyRewardCard() {
     return () => clearInterval(interval);
   }, [isClaimedToday]);
 
-  const handleClaimReward = () => {
-    // Mock claim logic
-    setIsClaimedToday(true);
-    localStorage.setItem('lastHustleSoulDailyClaim', new Date().toDateString());
-    toast({
-      title: "Reward Claimed!",
-      description: "You've received 50 GOLD for your daily login.",
-      variant: "default",
-    });
-    // TODO: Integrate with backend to actually award points and update user state
+  const handleClaimDailyReward = async () => {
+    if (!currentUser || !currentUser.id) {
+      toast({
+        title: 'Error',
+        description: 'User ID not found.',
+        variant: 'destructive',
+      });
+      return;
+    }
+  
+    try {
+      const res = await fetch('/api/daily-reward/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id }),
+      });
+  
+      const data = await res.json();
+  
+      if (data.success) {
+        const updatedUser = {
+          ...currentUser,
+          gold_points: data.goldPoints,
+          daily_reward_streak: data.dailyRewardStreak,
+          last_daily_reward_claim_at: data.claimedAt,
+        };
+  
+        setCurrentUser(updatedUser);
+        window.dispatchEvent(new CustomEvent<AppUser>('userUpdated_hustlesoul', { detail: updatedUser }));
+  
+        toast({
+          title: 'Daily Reward Claimed!',
+          description: `You earned ${data.rewardAmount} GOLD.`,
+          icon: <Coins className="h-6 w-6 text-yellow-500" />,
+        });
+      } else {
+        toast({
+          title: 'Already Claimed',
+          description: 'You have already claimed your reward today.',
+          variant: 'default',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to claim daily reward:', error);
+      toast({
+        title: 'Server Error',
+        description: 'Could not claim reward. Please try again later.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -69,11 +110,11 @@ export function DailyRewardCard() {
             <p className="text-sm text-muted-foreground">Next claim in: {timeLeft}</p>
           </div>
         ) : (
-          <Button onClick={handleClaimReward} className="w-full animate-pulse-glow" size="lg">
+          <Button onClick={handleClaimDailyReward} className="w-full animate-pulse-glow" size="lg">
             <Gift className="mr-2 h-5 w-5" /> Claim 50 GOLD
           </Button>
         )}
-      </CardContent>
+      </CardContent> 
     </Card>
   );
 }
