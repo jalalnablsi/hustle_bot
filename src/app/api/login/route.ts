@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
         last_daily_reward_claim_at: null,
         created_at: new Date().toISOString(),
         last_login: new Date().toISOString(),
-        // game_hearts: {}, // Initialize game hearts if needed
-        // last_heart_replenished: {},
+        // game_hearts: {}, 
+        // last_heart_replenished: {}, 
       };
 
       // Handle referral if referrerTelegramId is provided for a new user
@@ -80,7 +80,6 @@ export async function POST(req: NextRequest) {
       if (referrerUser) {
         newUserPayload.gold_points = (newUserPayload.gold_points || 0) + REFERRAL_BONUS_GOLD_FOR_REFERRED;
         referralBonusGoldForReferredUser = REFERRAL_BONUS_GOLD_FOR_REFERRED;
-        // The new user doesn't get spins from referral, the referrer does.
       }
 
       const { data: insertedUser, error: insertError } = await supabaseAdmin
@@ -108,10 +107,11 @@ export async function POST(req: NextRequest) {
           .insert({
             referrer_id: referrerUser.id,
             referred_id: insertedUser.id,
-            status: 'completed', // Mark as completed since bonus applied
-            completed_at: new Date().toISOString(),
-            // Store amounts for tracking if needed
-            referred_gold_at_activation: REFERRAL_BONUS_GOLD_FOR_REFERRED,
+            status: 'inactive', // Changed from 'completed' to 'inactive'
+            ad_views_count: 0,     // Added field
+            rewards_collected: false, // Added field
+            // completed_at: new Date().toISOString(), // Removed, as status is 'inactive'
+            // referred_gold_at_activation: REFERRAL_BONUS_GOLD_FOR_REFERRED, // Removed, or re-evaluate if this means initial bonus
           });
         referralBonusApplied = true;
       }
@@ -150,8 +150,9 @@ export async function POST(req: NextRequest) {
         responsePayload.welcomeBonusGold = welcomeBonusGoldApplied;
         responsePayload.welcomeBonusDiamonds = welcomeBonusDiamondsApplied;
         if(referralBonusApplied) {
-            responsePayload.referralBonusGold = referralBonusGoldForReferredUser; // Gold for the new referred user
-            responsePayload.referralBonusSpins = REFERRAL_BONUS_SPINS_FOR_REFERRER; // Spins for the referrer
+            responsePayload.referralBonusGold = referralBonusGoldForReferredUser; 
+            responsePayload.referralBonusSpinsForReferrer = REFERRAL_BONUS_SPINS_FOR_REFERRER; 
+            responsePayload.referralBonusGoldForReferrer = REFERRAL_BONUS_GOLD_FOR_REFERRER;
         }
     }
 
@@ -161,15 +162,13 @@ export async function POST(req: NextRequest) {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
 
-    // Set cookie for Telegram user info (non-sensitive part)
     response.headers.set(
       'Set-Cookie',
       `tgUser=${encodeURIComponent(JSON.stringify({
-        id: sanitizedUser.telegram_id, // Store telegram_id
+        id: sanitizedUser.telegram_id, 
         first_name: sanitizedUser.first_name,
         username: sanitizedUser.username,
-        // Do NOT store sensitive details like full user object or session tokens here
-      }))}; Path=/; HttpOnly; Max-Age=${60 * 60 * 24 * 7}; Secure; SameSite=Lax` // Max-Age 1 week
+      }))}; Path=/; HttpOnly; Max-Age=${60 * 60 * 24 * 7}; Secure; SameSite=Lax` 
     );
 
     return response;
