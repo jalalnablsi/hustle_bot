@@ -1,5 +1,4 @@
 
-      
 'use client';
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -47,7 +46,7 @@ export default function LeaderboardPage() {
     return (entries || []).map((entry, index) => ({
       ...entry,
       rank: entry.rank || index + 1,
-      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
+      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0), // Ensure points is a number
       username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
       avatarUrl: `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700/000000' : entry.rank === 2 ? 'C0C0C0/000000' : entry.rank === 3 ? 'CD7F32/000000' : '667EEA/FFFFFF'}.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}&font=roboto`,
       dataAiHint: "avatar person",
@@ -92,7 +91,7 @@ export default function LeaderboardPage() {
       </CardHeader>
       <CardContent className="px-3 sm:px-4 pb-3">
         <p className="text-xl sm:text-2xl font-bold text-foreground">{formatUserRankDisplay(rank)}</p>
-        {(score !== undefined && score !== null && score > 0) && <p className="text-xs text-muted-foreground">Value: {score.toLocaleString()}</p>}
+        {(score !== undefined && score !== null && score > 0) && <p className="text-xs text-muted-foreground">Value: {Number(score).toLocaleString()}</p>}
       </CardContent>
     </Card>
   );
@@ -143,15 +142,17 @@ export default function LeaderboardPage() {
         )}
 
         {topThree.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 xs:gap-4 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0">
-            {/* Mobile: Rank 1 top, 2 and 3 below. Desktop: 2, 1 (center), 3 */}
-            <div className="sm:col-span-1 flex justify-center order-2 sm:order-1">
+          <div className="grid grid-cols-3 gap-2 xs:gap-3 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0 relative">
+            {/* Rank 2 (Left) */}
+            <div className="col-start-1 flex justify-center order-2 sm:order-1">
               {rank2User && <TopThreeItem {...rank2User} currency={pointSuffix} rankNameOverride={rankTitles[2]} />}
             </div>
-            <div className="sm:col-span-1 flex justify-center order-1 sm:order-2">
+            {/* Rank 1 (Center) */}
+            <div className="col-start-2 flex justify-center order-1 sm:order-2 relative z-10">
               {rank1User && <TopThreeItem {...rank1User} currency={pointSuffix} rankNameOverride={rankTitles[1]} />}
             </div>
-            <div className="sm:col-span-1 flex justify-center order-3 sm:order-3">
+            {/* Rank 3 (Right) */}
+            <div className="col-start-3 flex justify-center order-3 sm:order-3">
               {rank3User && <TopThreeItem {...rank3User} currency={pointSuffix} rankNameOverride={rankTitles[3]} />}
             </div>
           </div>
@@ -216,5 +217,3 @@ export default function LeaderboardPage() {
     </AppShell>
   );
 }
-
-    

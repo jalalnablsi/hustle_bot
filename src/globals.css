@@ -1,0 +1,126 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 270 44% 14%; /* #261433 */
+    --foreground: 270 20% 90%; /* #E2DBE8 */
+
+    --card: 270 40% 18%; /* #2E1C3B */
+    --card-foreground: 270 20% 90%; /* #E2DBE8 */
+
+    --popover: 270 40% 16%; /* #291833 */
+    --popover-foreground: 270 20% 90%; /* #E2DBE8 */
+
+    --primary: 277 87% 53%; /* #A020F0 */
+    --primary-foreground: 0 0% 100%; /* #FFFFFF */
+
+    --secondary: 266 100% 65%; /* Lighter version of accent for secondary elements #8C3FFF */
+    --secondary-foreground: 0 0% 100%; /* #FFFFFF */
+
+    --muted: 270 30% 30%; /* #41324E */
+    --muted-foreground: 270 15% 65%; /* #9B91A4 */
+
+    --accent: 266 100% 50%; /* #6F00FF */
+    --accent-foreground: 0 0% 100%; /* #FFFFFF */
+
+    --destructive: 0 70% 55%; /* #EC5B3B */
+    --destructive-foreground: 0 0% 100%; /* #FFFFFF */
+
+    --border: 270 30% 25%; /* #3A2B47 */
+    --input: 270 30% 22%; /* #34263F */
+    --ring: 266 100% 50%; /* Accent color for focus rings */
+
+    --radius: 0.75rem; /* Slightly larger radius for a modern feel */
+
+    --chart-1: 277 87% 60%;
+    --chart-2: 266 100% 60%;
+    --chart-3: 277 87% 70%;
+    --chart-4: 266 100% 70%;
+    --chart-5: 277 87% 50%;
+
+    /* Sidebar variables are mostly for consistency if sidebar is used, applying main theme colors */
+    --sidebar-background: 270 44% 12%; /* Slightly darker than main background */
+    --sidebar-foreground: 270 20% 85%;
+    --sidebar-primary: 277 87% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 266 100% 50%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 270 30% 20%;
+    --sidebar-ring: 266 100% 50%;
+  }
+
+  /* .dark class is set on html, so these variables will apply */
+  .dark {
+    --background: 270 44% 14%;
+    --foreground: 270 20% 90%;
+    --card: 270 40% 18%;
+    --card-foreground: 270 20% 90%;
+    --popover: 270 40% 16%;
+    --popover-foreground: 270 20% 90%;
+    --primary: 277 87% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 266 100% 65%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 270 30% 30%;
+    --muted-foreground: 270 15% 65%;
+    --accent: 266 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 270 30% 25%;
+    --input: 270 30% 22%;
+    --ring: 266 100% 50%;
+    
+    --sidebar-background: 270 44% 12%;
+    --sidebar-foreground: 270 20% 85%;
+    --sidebar-primary: 277 87% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 266 100% 50%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 270 30% 20%;
+    --sidebar-ring: 266 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-glow {
+    animation: pulse-glow 2s infinite ease-in-out;
+  }
+  .animate-pulse-glow-yellow {
+    animation: pulse-glow-specific 2s infinite ease-in-out;
+    --glow-color: theme('colors.yellow.400');
+    --glow-color-strong: theme('colors.yellow.500');
+  }
+  .animate-pulse-glow-slate {
+    animation: pulse-glow-specific 2.2s infinite ease-in-out;
+    --glow-color: theme('colors.slate.400');
+    --glow-color-strong: theme('colors.slate.500');
+  }
+  .animate-pulse-glow-orange {
+    animation: pulse-glow-specific 2.4s infinite ease-in-out;
+    --glow-color: theme('colors.orange.500');
+    --glow-color-strong: theme('colors.orange.600');
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; box-shadow: 0 0 5px hsl(var(--primary)); transform: scale(1); }
+    50% { opacity: 0.8; box-shadow: 0 0 20px hsl(var(--primary)); transform: scale(1.03); }
+  }
+
+  @keyframes pulse-glow-specific {
+    0%, 100% { box-shadow: 0 0 3px var(--glow-color), 0 0 6px var(--glow-color-strong); transform: scale(1); }
+    50% { box-shadow: 0 0 10px var(--glow-color), 0 0 20px var(--glow-color-strong); transform: scale(1.02); }
+  }
+}
