@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
     // Step 2: التحقق من الحد اليومي ← لا يمكن التلاعب
     const dailyAdViewsLimit = Number(user.daily_ad_views_limit) || 50;
     const adViewsToday = Number(user.ad_views_today_count) || 0;
+    const updatedTotalAdsViews = Number(user.total_ads_views) + 1;
 
     if (adViewsToday >= dailyAdViewsLimit) {
       return new Response(
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
       .update({
         game_hearts: updatedGameHearts,
         ad_views_today_count: updatedAdViewsCount,
+        total_ads_views:updatedTotalAdsViews,
       })
       .eq('id', userId);
 

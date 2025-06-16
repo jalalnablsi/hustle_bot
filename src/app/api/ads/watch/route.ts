@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     // Step 2: التحقق من الحد الأقصى للمشاهدات ← لا يمكن التلاعب
     const dailyLimit = user.daily_ad_views_limit || 50;
     const todayViews = user.ad_views_today_count || 0;
+    const updatedTotalAdsViews = Number(user.total_ads_views) + 1;
 
     if (todayViews >= dailyLimit) {
       return new Response(
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
       .update({
         diamond_points: updatedDiamondBalance,
         ad_views_today_count: updatedAdViewsCount,
+        total_ads_views:updatedAdViewsCount,
       })
       .eq('id', userId);
 

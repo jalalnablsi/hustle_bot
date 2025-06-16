@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     // 1. Fetch user data
     const { data: user, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('id, ad_spins_used_today_count, daily_ad_views_limit, bonus_spins_available')
+      .select('id, ad_spins_used_today_count, daily_ad_views_limit, bonus_spins_available,total_ads_views')
       .eq('id', userId)
       .single();
 
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     const adsWatchedToday = user.ad_spins_used_today_count || 0;
     const dailyLimit = user.daily_ad_views_limit || 3; // Default from wheel page, ensure DB has similar default or is set
-
+    const updatedTotalAdsViews = Number(user.total_ads_views) + 1;
     // 2. Check ad view limit for spins
     if (adsWatchedToday >= dailyLimit) {
       return NextResponse.json({ success: false, error: `Ad limit for spins reached for today (${adsWatchedToday}/${dailyLimit})` }, { status: 429 });
@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       .update({
         bonus_spins_available: updatedBonusSpins,
         ad_spins_used_today_count: updatedAdsWatchedCount,
+        total_ads_views:updatedTotalAdsViews,
       })
       .eq('id', userId);
 

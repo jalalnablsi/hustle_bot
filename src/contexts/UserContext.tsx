@@ -11,6 +11,7 @@ interface UserContextType {
   updateUserSession: (updatedUserData: Partial<AppUser>) => void;
   loadingUser: boolean;
   fetchUserData: (isRetry?: boolean) => Promise<AppUser | null>;
+  telegramAuthError: string | null;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -18,18 +19,94 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 export function UserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+  const [isTelegramLoginProcessed, setIsTelegramLoginProcessed] = useState(false);
 
-  const fetchUserData = useCallback(async (isRetry = false): Promise<AppUser | null> => {
-    if (!isRetry) setLoadingUser(true);
+  const processTelegramLogin = useCallback(async () => {
+    setLoadingUser(true);
+    setTelegramAuthError(null);
+
+    if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
+      const initData = window.Telegram.WebApp.initData;
+      if (initData) {
+        try {
+          const params = new URLSearchParams(initData);
+          const userParam = params.get('user');
+          const startParam = params.get('start_param'); // For referral
+          
+          if (!userParam) {
+            throw new Error("Telegram user data not found in initData.");
+          }
+
+          const tgUserData = JSON.parse(decodeURIComponent(userParam));
+          const referrerTelegramId = startParam || null;
+
+          const loginPayload = {
+            telegramId: tgUserData.id.toString(),
+            firstName: tgUserData.first_name,
+            lastName: tgUserData.last_name || null,
+            username: tgUserData.username || null,
+            referrerTelegramId: referrerTelegramId,
+          };
+
+          const loginResponse = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginPayload),
+          });
+
+          if (!loginResponse.ok) {
+            const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed" }));
+            throw new Error(errorData.error || `Login failed with status: ${loginResponse.status}`);
+          }
+          
+          // Login successful, server has set the cookie. Now fetch the full user profile.
+          // The /api/login endpoint itself returns the user, but for consistency and to test /api/auth/me
+          // we can call fetchUserData here. Or, we could directly use loginResponse.json().user
+          // For now, let's ensure fetchUserData is called after successful login.
+          // setIsTelegramLoginProcessed(true); // Signal that login API call is done.
+
+          // Directly fetch user data now that cookie should be set
+          await fetchUserData(true); // Pass true to indicate this is part of initial auth
+
+        } catch (error: any) {
+          console.error('Telegram login processing error:', error);
+          setTelegramAuthError(error.message || 'Failed to process Telegram login.');
+          setCurrentUser(null);
+          setLoadingUser(false);
+        }
+      } else {
+        setTelegramAuthError('Telegram initData is missing. App must be launched from Telegram.');
+        setCurrentUser(null);
+        setLoadingUser(false);
+      }
+    } else {
+      // Not in Telegram environment or Telegram WebApp SDK not ready
+      // Try a slight delay for SDK readiness on initial load
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+        processTelegramLogin(); // Retry
+      } else {
+        setTelegramAuthError('Not running in a Telegram Web App environment.');
+        setCurrentUser(null);
+        setLoadingUser(false);
+      }
+    }
+    setIsTelegramLoginProcessed(true); // Mark as processed regardless of outcome for dependency
+  }, []);
+
+
+  const fetchUserData = useCallback(async (isInitialAuth = false): Promise<AppUser | null> => {
+    if (!isInitialAuth) setLoadingUser(true); // Only set loading if not part of initial auth sequence controlled by processTelegramLogin
+    
     try {
-      const response = await fetch('/api/auth/me'); // This endpoint uses the cookie set by /api/login
+      const response = await fetch('/api/auth/me'); 
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
-          // Validate and type cast data from API
           const validatedUser: AppUser = {
             ...data.user,
-            id: data.user.id?.toString() || `tg-${data.user.telegram_id}`, // Ensure id is string
+            id: data.user.id?.toString() || `tg-${data.user.telegram_id}`,
             telegram_id: data.user.telegram_id.toString(),
             first_name: data.user.first_name || '',
             username: data.user.username || null,
@@ -38,7 +115,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             diamond_points: Number(data.user.diamond_points) || 0,
             purple_gem_points: Number(data.user.purple_gem_points) || 0,
             blue_gem_points: Number(data.user.blue_gem_points) || 0,
-            referral_link: data.user.referral_link || '',
+            referral_link: data.user.referral_link || `https://t.me/HustleSoulBot?start=${data.user.telegram_id}`,
             referrals_made: Number(data.user.referrals_made) || 0,
             referral_gold_earned: Number(data.user.referral_gold_earned) || 0,
             referral_diamond_earned: Number(data.user.referral_diamond_earned) || 0,
@@ -48,21 +125,24 @@ export function UserProvider({ children }: { children: ReactNode }) {
             bonus_spins_available: Number(data.user.bonus_spins_available) || 0,
             daily_reward_streak: Number(data.user.daily_reward_streak) || 0,
             last_daily_reward_claim_at: data.user.last_daily_reward_claim_at || null,
-            daily_ad_views_limit: Number(data.user.daily_ad_views_limit) || 50, // Default to 50 if not set
+            daily_ad_views_limit: Number(data.user.daily_ad_views_limit) || 50,
             created_at: data.user.created_at || new Date().toISOString(),
             last_login: data.user.last_login || new Date().toISOString(),
-            // Ensure game_hearts is an object
             game_hearts: typeof data.user.game_hearts === 'object' && data.user.game_hearts !== null ? data.user.game_hearts : {},
+            stake_builder_high_score: Number(data.user.stake_builder_high_score) || 0,
+            last_heart_replenished: data.user.last_heart_replenished || null,
           };
           setCurrentUser(validatedUser);
           setLoadingUser(false);
           return validatedUser;
         } else {
-          setCurrentUser(null); // User not found or error in API response
+          setCurrentUser(null);
+          if (data.error === 'User not found. Please login again.') {
+             setTelegramAuthError('Session expired or user not found. Please relaunch from Telegram.');
+          }
         }
       } else {
-         // Network error or server error (e.g., 500)
-        console.error('UserContext: Failed to fetch user data, status:', response.status);
+        console.warn('UserContext: Failed to fetch user data from /api/auth/me, status:', response.status);
         setCurrentUser(null);
       }
     } catch (error) {
@@ -74,33 +154,28 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Initial fetch when provider mounts
-    fetchUserData();
-  }, [fetchUserData]);
+    // This effect now initiates the Telegram login process.
+    // fetchUserData will be called by processTelegramLogin upon successful /api/login.
+    processTelegramLogin();
+  }, [processTelegramLogin]);
 
   const updateUserSession = useCallback((updatedUserData: Partial<AppUser>) => {
     setCurrentUser(prevUser => {
       if (!prevUser) {
-        // This case should ideally not happen if user is logged in.
-        // If it does, it might mean we are trying to update a non-existent user.
-        // For safety, we could try to cast updatedUserData to AppUser if it has enough fields,
-        // or return null. For now, let's assume prevUser exists if this is called.
-         console.warn("updateUserSession called when prevUser is null. Updated data:", updatedUserData);
-         // Potentially, if updatedUserData contains an id, we could set it as the new currentUser.
-         // However, this might bypass the intended auth flow.
+         // If no previous user, and we have an ID, perhaps it's a fresh load after login
+         if (updatedUserData.id) {
+            // This is risky, ideally, full user object comes from fetchUserData
+            // For now, let's just log and return null if prevUser is null.
+            console.warn("updateUserSession called when prevUser is null. Data:", updatedUserData);
+            return null;
+         }
          return null;
       }
-
-      // Create a new object to ensure immutability and trigger re-renders
       const newUser = { ...prevUser };
-
-      // Iterate over keys in updatedUserData to safely update newUser
       for (const key in updatedUserData) {
         if (Object.prototype.hasOwnProperty.call(updatedUserData, key)) {
           const K = key as keyof AppUser;
           const value = updatedUserData[K];
-
-          // Type casting for numeric fields to prevent string concatenation or NaN issues
           if (K === 'gold_points' || K === 'diamond_points' || K === 'purple_gem_points' || 
               K === 'blue_gem_points' || K === 'referrals_made' || 
               K === 'referral_gold_earned' || K === 'referral_diamond_earned' ||
@@ -123,7 +198,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <UserContext.Provider value={{ currentUser, setCurrentUser, updateUserSession, loadingUser, fetchUserData }}>
+    <UserContext.Provider value={{ currentUser, setCurrentUser, updateUserSession, loadingUser, fetchUserData, telegramAuthError }}>
       {children}
     </UserContext.Provider>
   );
