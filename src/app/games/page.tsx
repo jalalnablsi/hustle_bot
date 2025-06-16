@@ -13,13 +13,13 @@ import { Progress } from "@/components/ui/progress";
 import { useUser } from '@/contexts/UserContext';
 
 const GAME_AREA_WIDTH_BASE = 320;
-const GAME_AREA_HEIGHT_MIN = 450;
+const GAME_AREA_HEIGHT_MIN = 450; // Min height for the game canvas
 const INITIAL_BLOCK_HEIGHT = 20;
 const INITIAL_BASE_WIDTH = 120;
 const MIN_BLOCK_WIDTH = 10;
 
 const MAX_POOLED_HEARTS = 5;
-const HEART_REPLENISH_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours
+// const HEART_REPLENISH_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours, managed by backend logic now
 
 const GOLD_FOR_SUCCESSFUL_NON_PERFECT_DROP = 1;
 const GOLD_FOR_PERFECT_DROP = 5;
@@ -27,7 +27,7 @@ const DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS = 0.5;
 
 const DIAMONDS_TO_CONTINUE_ATTEMPT = 1;
 const MAX_DIAMOND_CONTINUES_PER_ATTEMPT = 5;
-const AD_WATCH_DURATION_SECONDS = 5;
+const AD_WATCH_DURATION_SECONDS = 5; // For simulation
 
 const BLOCK_COLORS = [
   'hsl(var(--chart-1)/0.9)', 'hsl(var(--chart-2)/0.9)', 'hsl(var(--chart-3)/0.9)',
@@ -36,8 +36,8 @@ const BLOCK_COLORS = [
 ];
 
 const BLOCK_SLIDE_SPEED_START = 1.8;
-const BLOCK_SLIDE_SPEED_INCREMENT_BASE = 0.04; 
-const BLOCK_SLIDE_SPEED_INCREMENT_RAMP_FACTOR = 0.0008; 
+const BLOCK_SLIDE_SPEED_INCREMENT_BASE = 0.04;
+const BLOCK_SLIDE_SPEED_INCREMENT_RAMP_FACTOR = 0.0008;
 const MAX_BLOCK_SLIDE_SPEED = 7.0;
 
 const PERFECT_DROP_THRESHOLD = 2.5;
@@ -52,8 +52,8 @@ const BOTTOM_NAV_HEIGHT_CSS_VAR = 'var(--bottom-nav-height, 64px)';
 
 export default function StakeBuilderGamePage() {
   const { currentUser, loadingUser: contextLoadingUser, updateUserSession } = useUser();
-  const [isGameApiLoading, setIsGameApiLoading] = useState(false);
-  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
+  const [isGameApiLoading, setIsGameApiLoading] = useState(false); // For specific game actions
+  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true); // For initial hearts/highscore
 
   const [gameState, setGameState] = useState<'loading_user_data' | 'idle' | 'playing' | 'dropping' | 'gameover_attempt' | 'ad_viewing' | 'waiting_for_hearts'>('loading_user_data');
 
@@ -63,7 +63,7 @@ export default function StakeBuilderGamePage() {
   const [stakeBuilderHighScore, setStakeBuilderHighScore] = useState(0);
 
   const [pooledHearts, setPooledHearts] = useState(0);
-  const [nextHeartRegenTime, setNextHeartRegenTime] = useState<number | null>(null);
+  const [nextHeartRegenTime, setNextHeartRegenTime] = useState<number | null>(null); // Store as timestamp
   const [timeToNextHeartDisplay, setTimeToNextHeartDisplay] = useState<string>("Loading...");
 
   const [stackedBlocks, setStackedBlocks] = useState<StackedBlock[]>([]);
@@ -75,7 +75,6 @@ export default function StakeBuilderGamePage() {
   const [isAdDialogOpen, setIsAdDialogOpen] = useState(false);
   const [adTimer, setAdTimer] = useState(AD_WATCH_DURATION_SECONDS);
   const [adProgress, setAdProgress] = useState(0);
-  const [adPurpose, setAdPurpose] = useState<'gain_pooled_heart' | null>(null);
 
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const gameLoopRef = useRef<number | null>(null);
@@ -85,7 +84,7 @@ export default function StakeBuilderGamePage() {
     if (typeof window !== 'undefined') {
       const gamePageContainer = document.getElementById('stake-builder-game-page-container');
       if (gamePageContainer) {
-        const padding = 32; // Account for p-4 on parent or equivalent
+        const padding = 32;
         return Math.max(GAME_AREA_WIDTH_BASE, window.innerWidth < 768 ? gamePageContainer.clientWidth - padding : Math.min(gamePageContainer.clientWidth * 0.9, GAME_AREA_WIDTH_BASE + 200));
       }
       return window.innerWidth < 768 ? window.innerWidth * 0.90 : Math.min(window.innerWidth * 0.9, GAME_AREA_WIDTH_BASE + 200);
@@ -98,7 +97,7 @@ export default function StakeBuilderGamePage() {
   useEffect(() => {
     const handleResize = () => setGameAreaWidth(getGameAreaWidth());
     window.addEventListener('resize', handleResize);
-    handleResize(); 
+    handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, [getGameAreaWidth]);
 
@@ -115,50 +114,52 @@ export default function StakeBuilderGamePage() {
     if (apiData.success) {
         if (apiData.hearts && typeof apiData.hearts === 'object' && apiData.hearts[GAME_TYPE_IDENTIFIER] !== undefined) {
             newHeartsCount = Number(apiData.hearts[GAME_TYPE_IDENTIFIER]);
-        } else if (typeof apiData.hearts === 'number') { // Fallback for simple heart count
+        } else if (typeof apiData.hearts === 'number') { // Fallback for simple heart count from use-heart
              newHeartsCount = apiData.hearts;
         } else if (apiData.remainingHearts && typeof apiData.remainingHearts === 'object' && apiData.remainingHearts[GAME_TYPE_IDENTIFIER] !== undefined) { // From use-heart
             newHeartsCount = Number(apiData.remainingHearts[GAME_TYPE_IDENTIFIER]);
         }
-        newNextRegenTimestampStr = apiData.nextReplenishTime || apiData.nextReplenish || null;
+        
+        // For replenish-hearts success
+        if (apiData.nextReplenish) newNextRegenTimestampStr = apiData.nextReplenish;
+        // For initial hearts fetch or other updates
+        if (apiData.nextReplenishTime) newNextRegenTimestampStr = apiData.nextReplenishTime;
         
         if (apiData.adViewsToday !== undefined && currentUser) {
             updateUserSession({ ad_views_today_count: apiData.adViewsToday });
         }
     } else if (!apiData.success && apiData.message === 'Not ready to replenish hearts yet.' && apiData.nextReplenish) {
-        newHeartsCount = pooledHearts; 
+        newHeartsCount = pooledHearts; // Keep current hearts, only update timer
         newNextRegenTimestampStr = apiData.nextReplenish;
         if (source === 'checkBackendReplenish_manual_collect') {
             toast({ title: "Hearts Not Ready", description: "Not time to collect new hearts yet. Timer updated.", variant: "default"});
         }
     } else {
-      if (source !== 'fetchInitialHeartStatus' && apiData.error) {
+      if (apiData.error && source !== 'fetchInitialHeartStatus') { // Don't toast for initial load error here, handled elsewhere
         toast({ title: 'Heart Sync Failed', description: `${apiData.error} (Source: ${source || 'Unknown'})`, variant: "destructive" });
       }
-      // For initial fetch, if it fails, explicitly set hearts to 0 or a safe default
       if (source === 'fetchInitialHeartStatus' && !apiData.success) {
-        setPooledHearts(0); // Default to 0 if initial fetch fails
+        setPooledHearts(0);
         setNextHeartRegenTime(null);
       }
-      return; // Exit if not a success or known "not ready" case
+      return;
     }
 
     if (newHeartsCount !== -1) {
         setPooledHearts(Math.min(newHeartsCount, MAX_POOLED_HEARTS));
-        if (newNextRegenTimestampStr && newHeartsCount < MAX_POOLED_HEARTS) {
-            const regenTime = new Date(newNextRegenTimestampStr).getTime();
-            setNextHeartRegenTime(regenTime > Date.now() ? regenTime : null);
-        } else {
-            setNextHeartRegenTime(null); // No regen time if hearts are full or API doesn't provide
-        }
     }
 
-    if (gameState !== 'playing' && gameState !== 'dropping' && gameState !== 'ad_viewing' && gameState !== 'gameover_attempt') {
-        setGameState(newHeartsCount > 0 ? 'idle' : 'waiting_for_hearts');
+    if (newNextRegenTimestampStr && (newHeartsCount === -1 || newHeartsCount < MAX_POOLED_HEARTS)) {
+        const regenTime = new Date(newNextRegenTimestampStr).getTime();
+        setNextHeartRegenTime(regenTime > Date.now() ? regenTime : null);
+    } else if (newHeartsCount >= MAX_POOLED_HEARTS) {
+        setNextHeartRegenTime(null); // No regen time if hearts are full
     }
-  }, [currentUser, pooledHearts, updateUserSession, toast, gameState]);
+    // Important: Do not set gameState from here directly as it can conflict with other state transitions
+  }, [currentUser, pooledHearts, updateUserSession, toast]);
 
 
+  // Countdown Timer Effect
   useEffect(() => {
     let intervalId: NodeJS.Timeout | undefined;
     if (pooledHearts < MAX_POOLED_HEARTS && nextHeartRegenTime && nextHeartRegenTime > Date.now()) {
@@ -167,6 +168,7 @@ export default function StakeBuilderGamePage() {
         if (now >= nextHeartRegenTime) {
           setTimeToNextHeartDisplay("Ready to Collect!");
           if(intervalId) clearInterval(intervalId);
+          // Potentially auto-trigger a checkBackendReplenish(false) here if desired, or rely on user click
         } else {
           const remainingMs = nextHeartRegenTime - now;
           const hours = Math.floor(remainingMs / (1000 * 60 * 60));
@@ -175,19 +177,20 @@ export default function StakeBuilderGamePage() {
           setTimeToNextHeartDisplay(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
         }
       };
-      updateTimerDisplay(); // Initial call
+      updateTimerDisplay();
       intervalId = setInterval(updateTimerDisplay, 1000);
     } else if (pooledHearts < MAX_POOLED_HEARTS && (!nextHeartRegenTime || nextHeartRegenTime <= Date.now())) {
       setTimeToNextHeartDisplay("Collect Heart");
     } else if (pooledHearts >= MAX_POOLED_HEARTS) {
       setTimeToNextHeartDisplay("Hearts Full!");
     } else {
-      setTimeToNextHeartDisplay("Loading..."); // Default or initial loading state
+      setTimeToNextHeartDisplay("Loading...");
     }
     return () => clearInterval(intervalId);
   }, [pooledHearts, nextHeartRegenTime]);
 
 
+  // Initial data fetch (hearts and high score)
   const fetchUserGameData = useCallback(async (userIdForFetch: string) => {
     if (!userIdForFetch) return;
     setIsInitialDataLoading(true);
@@ -198,15 +201,21 @@ export default function StakeBuilderGamePage() {
         if (highScoreData.success) setStakeBuilderHighScore(highScoreData.highScore || 0);
       } else console.warn("Failed to fetch high score.");
 
-      // Initial call to /api/games/hearts to get current hearts and next replenish time
+      // Fetch initial hearts from /api/games/hearts
       const heartsRes = await fetch(`/api/games/hearts`); // User identified by cookie
       const heartsApiData = await heartsRes.json();
       updateHeartStateFromApi(heartsApiData, 'fetchInitialHeartStatus');
+      if (heartsApiData.success) {
+        const initialHearts = heartsApiData.hearts?.[GAME_TYPE_IDENTIFIER] ?? 0;
+         setGameState(initialHearts > 0 ? 'idle' : 'waiting_for_hearts');
+      } else {
+        setGameState('waiting_for_hearts'); // Fallback if heart fetch fails
+      }
 
     } catch (error) {
       toast({ title: 'Error Loading Game Data', description: (error as Error).message, variant: 'destructive' });
-      setGameState('waiting_for_hearts'); // Fallback state
-      setPooledHearts(0); // Ensure a safe default
+      setGameState('waiting_for_hearts');
+      setPooledHearts(0);
       setNextHeartRegenTime(null);
     } finally {
       setIsInitialDataLoading(false);
@@ -214,13 +223,14 @@ export default function StakeBuilderGamePage() {
   }, [toast, updateHeartStateFromApi]);
 
 
+  // Manual heart collection or automatic check (less frequent)
   const checkBackendReplenish = useCallback(async (isManualCollectAttempt = false) => {
     if (!currentUser?.id || isGameApiLoading) return;
     if (isManualCollectAttempt && pooledHearts >= MAX_POOLED_HEARTS) {
         toast({title: "Hearts Full", description: "You already have the maximum hearts."});
         return;
     }
-    setIsGameApiLoading(true);
+    setIsGameApiLoading(true); // Use this for any API call that should disable buttons
     if (isManualCollectAttempt) {
         toast({ description: "Trying to collect heart...", duration: 2000, icon: <RefreshCw className="h-4 w-4 animate-spin" /> });
     }
@@ -233,7 +243,7 @@ export default function StakeBuilderGamePage() {
       const data = await res.json();
       const previousHearts = pooledHearts;
       updateHeartStateFromApi(data, isManualCollectAttempt ? 'checkBackendReplenish_manual_collect' : 'checkBackendReplenish_auto');
-      
+
       if (isManualCollectAttempt && data.success) {
          const newHearts = (data.hearts && typeof data.hearts === 'object' && data.hearts[GAME_TYPE_IDENTIFIER] !== undefined)
             ? data.hearts[GAME_TYPE_IDENTIFIER]
@@ -243,49 +253,56 @@ export default function StakeBuilderGamePage() {
           toast({ description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400" /> Heart(s) collected! New total: {newHearts}</span>, duration: 2500 });
         }
       }
+       // Update game state after heart state potentially changes
+      if (gameState !== 'playing' && gameState !== 'dropping' && gameState !== 'ad_viewing' && gameState !== 'gameover_attempt') {
+        const currentHeartCount = (data.success && data.hearts?.[GAME_TYPE_IDENTIFIER] !== undefined) ? data.hearts[GAME_TYPE_IDENTIFIER] : pooledHearts;
+        setGameState(currentHeartCount > 0 ? 'idle' : 'waiting_for_hearts');
+      }
     } catch (error) {
       console.error('Error during heart replenish check:', error);
       if (isManualCollectAttempt) toast({ title: "Network Error", description: "Failed to collect heart.", variant: "destructive" })
     } finally {
       setIsGameApiLoading(false);
     }
-  }, [currentUser?.id, updateHeartStateFromApi, isGameApiLoading, pooledHearts, toast]);
+  }, [currentUser?.id, updateHeartStateFromApi, isGameApiLoading, pooledHearts, toast, gameState]);
 
-  
+
   useEffect(() => {
     if (currentUser?.id && gameState === 'loading_user_data') {
       fetchUserGameData(currentUser.id);
     } else if (!contextLoadingUser && !currentUser && gameState === 'loading_user_data') {
-      // No user, set to a state where game cannot be played
       setIsInitialDataLoading(false);
-      setGameState('idle'); // Or a specific 'login_required' state
+      setGameState('idle');
       setPooledHearts(0);
       setNextHeartRegenTime(null);
     }
   }, [currentUser, contextLoadingUser, fetchUserGameData, gameState]);
 
   const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number) => {
-    if (!gameAreaRef.current) return;
-    const currentScore = Math.max(0, stackedBlocks.length - 1); // -1 because base block doesn't count to score
-    
-    // Dynamic speed calculation
+    if (!gameAreaRef.current || gameAreaWidth <= 0) return; // Ensure gameAreaWidth is positive
+    const currentScore = Math.max(0, stackedBlocks.length - 1);
+
     const speedRamp = currentScore * BLOCK_SLIDE_SPEED_INCREMENT_RAMP_FACTOR;
     const speedIncrement = BLOCK_SLIDE_SPEED_INCREMENT_BASE + speedRamp;
     const currentSpeed = Math.min(BLOCK_SLIDE_SPEED_START + (currentScore * speedIncrement), MAX_BLOCK_SLIDE_SPEED);
-    
+
     setCurrentBlock({
       x: Math.random() < 0.5 ? 0 - currentTopWidth / 4 : gameAreaWidth - currentTopWidth * 3 / 4,
-      y: visualCurrentTopY - INITIAL_BLOCK_HEIGHT - 5, // Spawn above the current stack
+      y: visualCurrentTopY - INITIAL_BLOCK_HEIGHT - 5,
       width: currentTopWidth,
       color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length],
       direction: Math.random() < 0.5 ? 1 : -1,
-      speed: currentSpeed,
+      speed: Math.max(0.5, currentSpeed), // Ensure speed is always positive
     });
   }, [gameAreaWidth, stackedBlocks.length]);
 
 
   const initializeNewGameAttempt = useCallback(() => {
-    if (!gameAreaRef.current) return;
+    if (!gameAreaRef.current || gameAreaWidth <= 0) {
+      console.error("Cannot initialize game: Game area not ready or invalid width.");
+      setGameState('idle'); // Revert to idle if setup fails
+      return;
+    }
 
     setCurrentAttemptGold(0);
     setCurrentAttemptDiamonds(0);
@@ -307,8 +324,7 @@ export default function StakeBuilderGamePage() {
 
   const startGameAttempt = useCallback(async () => {
     if (!currentUser?.id) {
-      toast({ title: "User Not Loaded", description: "Please wait or refresh.", variant: "destructive" });
-      return;
+      toast({ title: "Login Required", description: "Please log in to play.", variant: "destructive" }); return;
     }
     if (pooledHearts <= 0 || gameState === 'playing' || gameState === 'ad_viewing' || isGameApiLoading) {
       if (pooledHearts <= 0 && gameState !== 'playing') toast({ title: "No Hearts Left!", description: "Replenish hearts or watch an ad." });
@@ -325,9 +341,12 @@ export default function StakeBuilderGamePage() {
       const data = await res.json();
       if (!data.success) {
         toast({ title: 'Could Not Start Game', description: data.error || "Failed to use a heart.", variant: 'destructive' });
-        if (currentUser.id) await fetchUserGameData(currentUser.id); // Re-sync if use-heart failed
+        if (data.error?.toLowerCase().includes("no hearts")) {
+            setPooledHearts(0); // Sync client if server says no hearts
+            setGameState('waiting_for_hearts');
+        }
       } else {
-        updateHeartStateFromApi(data, 'startGameAttempt_useHeart');
+        updateHeartStateFromApi(data, 'startGameAttempt_useHeart'); // API should return new heart count
         initializeNewGameAttempt();
       }
     } catch (error) {
@@ -335,7 +354,7 @@ export default function StakeBuilderGamePage() {
     } finally {
       setIsGameApiLoading(false);
     }
-  }, [currentUser?.id, pooledHearts, initializeNewGameAttempt, toast, fetchUserGameData, gameState, updateHeartStateFromApi, isGameApiLoading]);
+  }, [currentUser?.id, pooledHearts, initializeNewGameAttempt, toast, gameState, updateHeartStateFromApi, isGameApiLoading]);
 
 
   const processAttemptOver = useCallback(async () => {
@@ -347,10 +366,10 @@ export default function StakeBuilderGamePage() {
 
     if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
     gameLoopRef.current = null;
-    setCurrentBlock(null); // Ensure current block is cleared
+    setCurrentBlock(null);
 
     if (currentUser?.id && (finalScore > 0 || finalGold > 0 || finalDiamonds > 0)) {
-      // Non-blocking score submission
+      setIsGameApiLoading(true); // Indicate background submission
       fetch('/api/games/submit-score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -366,10 +385,10 @@ export default function StakeBuilderGamePage() {
             updateUserSession({ gold_points: data.totalGold, diamond_points: data.totalDiamonds });
           }
           if (data.isHighScore && finalScore > stakeBuilderHighScore) {
-            setStakeBuilderHighScore(finalScore); // Update local high score state
+            setStakeBuilderHighScore(finalScore);
             toast({ title: "New High Score!", description: `You reached ${finalScore} points!`, icon: <Award className="h-5 w-5 text-yellow-400" /> });
           } else {
-             toast({ title: "Score Saved!", description: `Score: ${finalScore}, Gold: ${finalGold}, Diamonds: ${finalDiamonds.toFixed(2)}`});
+             toast({ title: "Score Saved!", description: `Score: ${finalScore}, Gold: ${finalGold.toFixed(0)}, Diamonds: ${finalDiamonds.toFixed(2)}`});
           }
         } else {
           toast({ title: "Score Submission Issue", description: data.error || "Could not save score.", variant: "destructive" });
@@ -377,17 +396,18 @@ export default function StakeBuilderGamePage() {
       })
       .catch(error => {
         toast({ title: "Network Error", description: "Score submission failed: " + (error as Error).message, variant: "destructive" });
-      });
+      })
+      .finally(() => setIsGameApiLoading(false));
     }
   }, [currentUser, currentAttemptGold, currentAttemptDiamonds, stackedBlocks.length, stakeBuilderHighScore, updateUserSession, toast]);
+
 
   const continueCurrentAttempt = useCallback(() => {
     if (stackedBlocks.length > 0) {
       const topBlock = stackedBlocks[stackedBlocks.length - 1];
-      spawnNewBlock(topBlock.width, topBlock.y - stackVisualOffsetY); // Adjust y by current offset
+      spawnNewBlock(topBlock.width, topBlock.y - stackVisualOffsetY);
       setGameState('playing');
     } else {
-      // Should not happen if game over is handled correctly, but as a fallback:
       initializeNewGameAttempt();
     }
   }, [stackedBlocks, spawnNewBlock, initializeNewGameAttempt, stackVisualOffsetY]);
@@ -396,10 +416,10 @@ export default function StakeBuilderGamePage() {
   const handleDropBlock = useCallback(() => {
     if (gameState !== 'playing' || !currentBlock || isGameApiLoading) return;
 
-    setGameState('dropping'); // Visual dropping state, game loop should pause
+    setGameState('dropping');
 
     const topStackBlock = stackedBlocks[stackedBlocks.length - 1];
-    if (!topStackBlock) { processAttemptOver(); return; } // Should not happen if base block exists
+    if (!topStackBlock) { processAttemptOver(); return; }
 
     let newBlockX = currentBlock.x;
     let newBlockWidth = currentBlock.width;
@@ -407,29 +427,27 @@ export default function StakeBuilderGamePage() {
     let gainedDiamondsThisDrop = 0;
     let isPerfectDrop = false;
 
-    // Calculate overlap
     const overlapStart = Math.max(currentBlock.x, topStackBlock.x);
     const overlapEnd = Math.min(currentBlock.x + currentBlock.width, topStackBlock.x + topStackBlock.width);
     const overlapWidth = Math.max(0, overlapEnd - overlapStart);
 
-    if (overlapWidth >= MIN_BLOCK_WIDTH * 0.7) { // Allow some tolerance, not just MIN_BLOCK_WIDTH
+    if (overlapWidth >= MIN_BLOCK_WIDTH * 0.7) {
       newBlockX = overlapStart;
       newBlockWidth = overlapWidth;
 
-      // Check for perfect drop
       const xDiff = Math.abs(currentBlock.x - topStackBlock.x);
-      const widthDiff = Math.abs(currentBlock.width - topStackBlock.width); // Compare current block width with underlying block width
+      const widthDiff = Math.abs(currentBlock.width - topStackBlock.width);
 
-      if (xDiff < PERFECT_DROP_THRESHOLD && widthDiff < PERFECT_DROP_THRESHOLD + 2) { // Allow slight width diff for perfect
+      if (xDiff < PERFECT_DROP_THRESHOLD && widthDiff < PERFECT_DROP_THRESHOLD + 2) {
         isPerfectDrop = true;
-        newBlockX = topStackBlock.x; // Align perfectly
-        newBlockWidth = topStackBlock.width; // Take on the width of the block below
+        newBlockX = topStackBlock.x;
+        newBlockWidth = topStackBlock.width;
         gainedGoldThisDrop = GOLD_FOR_PERFECT_DROP;
         const newConsecutivePerfects = consecutivePerfectDrops + 1;
         setConsecutivePerfectDrops(newConsecutivePerfects);
         if (newConsecutivePerfects >= 3) {
           gainedDiamondsThisDrop = DIAMONDS_FOR_THREE_CONSECUTIVE_PERFECT_DROPS;
-          setConsecutivePerfectDrops(0); // Reset after 3
+          setConsecutivePerfectDrops(0);
           toast({ description: <span className="flex items-center text-sm"><Gem className="h-4 w-4 mr-1 text-sky-400" /> 3x Perfect! +{gainedDiamondsThisDrop.toFixed(2)}💎</span>, duration: 1500, className: "bg-primary/20 border-primary/50" });
         }
       } else {
@@ -441,42 +459,38 @@ export default function StakeBuilderGamePage() {
          setCurrentAttemptDiamonds(d => parseFloat((d + gainedDiamondsThisDrop).toFixed(4)));
       }
 
-      // If the new block is too small after cutting, game over
       if (newBlockWidth < MIN_BLOCK_WIDTH) {
         processAttemptOver(); return;
       }
 
-      // Add the new block to the stack
       const newBlockY = topStackBlock.y - INITIAL_BLOCK_HEIGHT;
       const newStackedBlock: StackedBlock = {
         id: `block-${Date.now()}-${Math.random()}`, x: newBlockX, y: newBlockY,
         width: newBlockWidth, color: currentBlock.color, isPerfect: isPerfectDrop,
       };
       setStackedBlocks(prev => [...prev, newStackedBlock]);
-      
-      // Adjust visual offset if stack gets too high
+
       const visualNewBlockTopY = newBlockY - stackVisualOffsetY;
-      if (visualNewBlockTopY < GAME_AREA_HEIGHT_MIN / 2.3 && stackedBlocks.length +1 > 5) { // +1 for the block just added
+      if (visualNewBlockTopY < GAME_AREA_HEIGHT_MIN / 2.3 && stackedBlocks.length +1 > 5) {
         setStackVisualOffsetY(prevOffset => prevOffset + INITIAL_BLOCK_HEIGHT);
       }
 
-      // Spawn the next block
-      spawnNewBlock(newBlockWidth, newBlockY - stackVisualOffsetY); // newBlockY is absolute, adjust by current offset for spawning
-      setGameState('playing'); // Resume playing state for next block
+      spawnNewBlock(newBlockWidth, newBlockY - stackVisualOffsetY);
+      setGameState('playing');
 
-    } else { // Missed completely or too little overlap
+    } else {
       processAttemptOver();
     }
-  }, [gameState, currentBlock, stackedBlocks, consecutivePerfectDrops, spawnNewBlock, processAttemptOver, toast, stackVisualOffsetY, isGameApiLoading, gameAreaWidth]);
+  }, [gameState, currentBlock, stackedBlocks, consecutivePerfectDrops, spawnNewBlock, processAttemptOver, toast, stackVisualOffsetY, isGameApiLoading, gameAreaWidth, GAME_AREA_HEIGHT_MIN]);
 
 
   const gameLoop = useCallback(() => {
-    if (gameState !== 'playing' || !currentBlock) {
+    if (gameState !== 'playing' || !currentBlock || gameAreaWidth <=0 || currentBlock.speed <= 0) {
       if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
       gameLoopRef.current = null;
       return;
     }
-    
+
     setCurrentBlock(prev => {
       if (!prev) return null;
       let newX = prev.x + prev.direction * prev.speed;
@@ -493,18 +507,22 @@ export default function StakeBuilderGamePage() {
     });
 
     gameLoopRef.current = requestAnimationFrame(gameLoop);
-  }, [gameState, currentBlock, gameAreaWidth]); // Added gameAreaWidth
+  }, [gameState, currentBlock, gameAreaWidth]);
 
   useEffect(() => {
-    if (gameState === 'playing' && currentBlock && gameAreaWidth > 0 && !gameLoopRef.current) {
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
+    if (gameState === 'playing' && currentBlock && gameAreaWidth > 0 && currentBlock.speed > 0 && !gameLoopRef.current) {
+        console.log("Starting game loop. CurrentBlock:", currentBlock, "GameAreaWidth:", gameAreaWidth);
+        gameLoopRef.current = requestAnimationFrame(gameLoop);
     } else if (gameState !== 'playing' && gameLoopRef.current) {
-      cancelAnimationFrame(gameLoopRef.current);
-      gameLoopRef.current = null;
+        console.log("Cancelling game loop. GameState:", gameState);
+        cancelAnimationFrame(gameLoopRef.current);
+        gameLoopRef.current = null;
     }
-    // Cleanup on unmount
     return () => {
-      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      if (gameLoopRef.current) {
+        console.log("Cleaning up game loop on unmount.");
+        cancelAnimationFrame(gameLoopRef.current);
+      }
     };
   }, [gameState, gameLoop, currentBlock, gameAreaWidth]);
 
@@ -515,35 +533,40 @@ export default function StakeBuilderGamePage() {
       else toast({ title: "Daily Ad Limit Reached for Gaining Hearts" });
       return;
     }
-    setAdPurpose('gain_pooled_heart');
     setAdTimer(AD_WATCH_DURATION_SECONDS);
     setAdProgress(0);
     setIsAdDialogOpen(true);
-    setGameState('ad_viewing');
-  }, [currentUser, pooledHearts, toast, gameState]);
+    setGameState('ad_viewing'); // Set game state during ad view
+  }, [currentUser, pooledHearts, toast]);
 
 
   const processAdReward = useCallback(async () => {
-    setIsAdDialogOpen(false); 
-    if (!currentUser?.id || adPurpose !== 'gain_pooled_heart' || isGameApiLoading) {
+    setIsAdDialogOpen(false);
+    if (!currentUser?.id || isGameApiLoading) {
         setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
-        setAdPurpose(null);
+        setAdTimer(AD_WATCH_DURATION_SECONDS); setAdProgress(0);
         return;
     }
 
     setIsGameApiLoading(true);
+    toast({ description: "Verifying ad watch...", duration: 1500, icon: <Loader2 className="h-4 w-4 animate-spin"/> });
     try {
-        const res = await fetch('/api/games/watch-ad-for-heart', {
+        const res = await fetch('/api/games/watch-ad-for-heart', { // Correct endpoint
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id }),
         });
         const data = await res.json();
-        
+
         if (data.success) {
+            // API for watch-ad-for-heart should return the new hearts state
+            // And ad_views_today_count
             updateHeartStateFromApi(data, 'processAdReward_watchAdForHeart');
+            updateUserSession({ ad_views_today_count: data.adViewsToday }); // Make sure API returns this
             toast({ description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400" /> +1 Heart!</span>, duration: 2000 });
-            // updateHeartStateFromApi will set the game state appropriately
+             // Set game state based on new heart count
+            const newHeartCount = data.hearts?.[GAME_TYPE_IDENTIFIER] ?? pooledHearts + 1; // Optimistic or from data
+            setGameState(newHeartCount > 0 ? 'idle' : 'waiting_for_hearts');
         } else {
             toast({ title: "Ad Reward Failed", description: data.error || "Could not grant heart.", variant: "destructive" });
             setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
@@ -553,11 +576,10 @@ export default function StakeBuilderGamePage() {
         setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
     } finally {
         setIsGameApiLoading(false);
-        setAdPurpose(null);
         setAdTimer(AD_WATCH_DURATION_SECONDS);
         setAdProgress(0);
     }
-  }, [currentUser?.id, adPurpose, isGameApiLoading, pooledHearts, toast, updateHeartStateFromApi]);
+  }, [currentUser?.id, isGameApiLoading, pooledHearts, toast, updateHeartStateFromApi, updateUserSession]);
 
 
   useEffect(() => {
@@ -568,7 +590,7 @@ export default function StakeBuilderGamePage() {
         setAdProgress(prev => Math.min(prev + (100 / AD_WATCH_DURATION_SECONDS), 100));
       }, 1000);
     } else if (gameState === 'ad_viewing' && isAdDialogOpen && adTimer === 0 && adProgress >= 100) {
-      if (!isGameApiLoading) {
+      if (!isGameApiLoading) { // Ensure not already processing another API call
           processAdReward();
       }
     }
@@ -577,8 +599,8 @@ export default function StakeBuilderGamePage() {
 
   const closeAdDialogEarly = useCallback(() => {
     setIsAdDialogOpen(false);
-    setAdPurpose(null);
     setAdTimer(AD_WATCH_DURATION_SECONDS); setAdProgress(0);
+    // Revert game state based on current heart count
     setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
     toast({ title: "Ad Closed", description: "No reward granted.", variant: "default", duration: 1500 });
   }, [pooledHearts, toast]);
@@ -614,12 +636,14 @@ export default function StakeBuilderGamePage() {
 
 
   const canContinueWithDiamonds = currentUser && typeof currentUser.diamond_points === 'number' && currentUser.diamond_points >= DIAMONDS_TO_CONTINUE_ATTEMPT && diamondContinuesUsedThisAttempt < MAX_DIAMOND_CONTINUES_PER_ATTEMPT;
-  const adViewsForHeartsToday = currentUser?.ad_views_today_count || 0;
-  const dailyAdLimitForHearts = currentUser?.daily_ad_views_limit || 5; // Default limit specific to hearts for ads
+  const adViewsForHeartsToday = currentUser?.ad_views_today_count || 0; // This should be specific to ad for heart, or a general ad_views_today
+  const dailyAdLimitForHearts = currentUser?.daily_ad_views_limit || 5;
   const canWatchAdForPooledHeart = pooledHearts < MAX_POOLED_HEARTS && adViewsForHeartsToday < dailyAdLimitForHearts;
 
-  const isReadyToCollectHeartManual = (timeToNextHeartDisplay === "Collect Heart" || timeToNextHeartDisplay === "Ready to Collect!") && pooledHearts < MAX_POOLED_HEARTS;
   const isHeartRegenCountdownActive = timeToNextHeartDisplay && !timeToNextHeartDisplay.includes("Collect") && !timeToNextHeartDisplay.includes("Full") && !timeToNextHeartDisplay.includes("Loading");
+  const isReadyToCollectHeartManual = (timeToNextHeartDisplay === "Collect Heart" || timeToNextHeartDisplay === "Ready to Collect!") && pooledHearts < MAX_POOLED_HEARTS;
+
+  const showPreGameUI = gameState === 'idle' || gameState === 'waiting_for_hearts' || gameState === 'gameover_attempt';
 
 
   if (isInitialDataLoading || (contextLoadingUser && !currentUser && gameState === 'loading_user_data')) {
@@ -704,14 +728,15 @@ export default function StakeBuilderGamePage() {
                 </div>
               )}
 
-              <Button onClick={startGameAttempt} disabled={isGameApiLoading || pooledHearts <= 0 || gameState === 'playing' || gameState === 'ad_viewing'} size="lg" className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground text-xl py-3 rounded-lg shadow-xl transform hover:scale-105">
-                {isGameApiLoading && pooledHearts > 0 ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6" />}
-                {isGameApiLoading && pooledHearts > 0 ? "Preparing..." : (pooledHearts > 0 ? `Play Game (-1 Heart)` : "No Hearts Left")}
+              {/* Play Game Button */}
+               <Button onClick={startGameAttempt} disabled={isGameApiLoading || pooledHearts <= 0 || gameState === 'playing' || gameState === 'ad_viewing'} size="lg" className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground text-xl py-3 rounded-lg shadow-xl transform hover:scale-105">
+                {isGameApiLoading && pooledHearts > 0 && gameState !== 'playing' ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6" />}
+                {isGameApiLoading && pooledHearts > 0 && gameState !== 'playing' ? "Preparing..." : (pooledHearts > 0 ? `Play Game (-1 Heart)` : "No Hearts Left")}
               </Button>
 
               {/* Heart Management Section */}
               <div className="w-full p-3 bg-slate-800/50 rounded-lg border border-slate-700 space-y-2">
-                {isInitialDataLoading && timeToNextHeartDisplay === "Loading..." ? (
+                 {isInitialDataLoading && timeToNextHeartDisplay === "Loading..." ? (
                     <div className="flex justify-center items-center py-1"><Loader2 className="h-5 w-5 animate-spin text-slate-400"/></div>
                 ) : pooledHearts >= MAX_POOLED_HEARTS ? (
                     <p className="text-sm text-green-400 font-semibold flex items-center justify-center gap-1.5"><CheckCircle className="h-4 w-4"/> Hearts Full!</p>
@@ -719,7 +744,7 @@ export default function StakeBuilderGamePage() {
                     <div className="text-center">
                         <p className="text-xs text-muted-foreground">Next Heart In:</p>
                         <p className="text-lg font-semibold font-mono text-yellow-300">{timeToNextHeartDisplay}</p>
-                        <Button variant="outline" size="sm" className="w-full mt-1 opacity-60 cursor-not-allowed" disabled>
+                         <Button variant="outline" size="sm" className="w-full mt-1 opacity-60 cursor-not-allowed" disabled>
                             Waiting...
                         </Button>
                     </div>
@@ -728,15 +753,16 @@ export default function StakeBuilderGamePage() {
                         {isGameApiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4"/> }
                         Collect Heart
                     </Button>
-                ) : ( <p className="text-sm text-slate-400 text-center">{timeToNextHeartDisplay}</p> )}
+                ) : ( <p className="text-sm text-slate-400 text-center">{timeToNextHeartDisplay === "Loading..." ? <Loader2 className="inline h-4 w-4 animate-spin"/> : timeToNextHeartDisplay}</p> )}
               </div>
 
+              {/* Watch Ad for Heart Button */}
               {canWatchAdForPooledHeart && (
                 <Button onClick={handleWatchAdForHeart} disabled={isGameApiLoading || isAdDialogOpen} variant="outline" size="md" className="w-full border-yellow-400 text-yellow-400 hover:bg-yellow-400/10 transition-colors duration-200 ease-in-out shadow-md">
                   <Tv className="mr-2 h-4 w-4" /> Watch Ad for +1 <Heart className="inline h-3 w-3 fill-current ml-1 text-red-400" />
                 </Button>
               )}
-              { (gameState === 'idle' || gameState === 'waiting_for_hearts' || gameState === 'gameover_attempt') && <p className="text-xs text-muted-foreground mt-3">Tap screen or press Space to drop blocks. Perfect drops earn more!</p> }
+              {showPreGameUI && <p className="text-xs text-muted-foreground mt-3">Tap screen or press Space to drop blocks. Perfect drops earn more!</p> }
             </div>
           )}
         </div>
@@ -768,4 +794,3 @@ export default function StakeBuilderGamePage() {
     </AppShell>
   );
 }
-    
