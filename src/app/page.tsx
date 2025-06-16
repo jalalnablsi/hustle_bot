@@ -3,14 +3,13 @@
 
 import { AppShell } from "@/components/layout/AppShell";
 import { UserBalanceCard } from "@/components/dashboard/UserBalanceCard";
-import { useState, useEffect, useCallback } from 'react';
 import { DailyRewardCard } from "@/components/dashboard/DailyRewardCard";
 import { QuickActionGrid } from "@/components/dashboard/QuickActionGrid";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import type { AppUser } from "@/app/types";
 import { Coins, Gem, PartyPopper, Users, Loader2, Megaphone } from "lucide-react";
-import { useUser } from "@/contexts/UserContext"; 
+import { useUser } from '@/contexts/UserContext';
+import { useEffect } from 'react'; // Added useEffect for Telegram WebApp ready
 
 interface TelegramWebAppUser {
   id: number;
@@ -27,123 +26,23 @@ const WELCOME_BONUS_DIAMONDS = 1;
 
 export default function DashboardPage() {
   const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
-  const [initialLoginAttempted, setInitialLoginAttempted] = useState(false);
   const { toast } = useToast();
 
-  const handleLoginAndUserCreation = useCallback(async () => {
-    if (initialLoginAttempted || (!contextLoadingUser && currentUser)) {
-      return;
-    }
-    setInitialLoginAttempted(true);
-
-    let tgUser: TelegramWebAppUser | null = null;
-    let referrerId: string | null = null;
-
-    if (typeof window !== 'undefined') {
-      if ((window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
-        tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user as TelegramWebAppUser;
-        const startParam = (window as any).Telegram.WebApp.initDataUnsafe.start_param;
-        if (startParam) {
-          referrerId = startParam;
-          localStorage.setItem('hustlesoul_referrer_id', referrerId);
-        }
-      } else {
-        const storedMockIdStr = localStorage.getItem('mockTelegramUserId_hustlesoul');
-        const mockId = storedMockIdStr ? parseInt(storedMockIdStr, 10) : Math.floor(100000000 + Math.random() * 900000000);
-        tgUser = { id: mockId, first_name: 'DevSoul', username: `devsoul${mockId.toString().slice(0,5)}` };
-        console.warn("Telegram WebApp user not found, using mock Telegram user for /api/login:", tgUser);
-        if (!storedMockIdStr) localStorage.setItem('mockTelegramUserId_hustlesoul', mockId.toString());
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlReferrerId = urlParams.get('start');
-        if (urlReferrerId) {
-          referrerId = urlReferrerId;
-          localStorage.setItem('hustlesoul_referrer_id', referrerId);
-        }
-      }
-      if (!referrerId) referrerId = localStorage.getItem('hustlesoul_referrer_id');
-    }
-
-    if (tgUser) {
-      try {
-        const response = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            telegramId: tgUser.id.toString(),
-            firstName: tgUser.first_name,
-            lastName: tgUser.last_name,
-            username: tgUser.username,
-            referrerTelegramId: referrerId,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Login API request failed: ${response.status}`);
-        }
-        const data = await response.json();
-
-        if (data.success && data.user) {
-          updateUserSession(data.user); 
-          if (data.isNewUser) {
-            toast({
-              title: 'Welcome to HustleSoul!',
-              description: (
-                <div className="flex flex-col gap-1">
-                  <span>You've received a welcome bonus!</span>
-                  <span className="flex items-center">
-                    <Coins className="h-4 w-4 mr-1 text-yellow-500" /> {data.welcomeBonusGold || WELCOME_BONUS_GOLD} Gold
-                  </span>
-                  <span className="flex items-center">
-                    <Gem className="h-4 w-4 mr-1 text-sky-400" /> {data.welcomeBonusDiamonds || WELCOME_BONUS_DIAMONDS} Diamond
-                  </span>
-                </div>
-              ),
-              icon: <PartyPopper className="h-6 w-6 text-primary" />,
-              duration: 7000,
-            });
-            if (data.referralBonusApplied) {
-              toast({
-                title: 'Referral Bonus!',
-                description: `You also received a bonus for joining via a referral! Gold: +${data.referralBonusGold}, Spins: +${data.referralBonusSpins}`,
-                icon: <Users className="h-6 w-6 text-primary" />,
-                duration: 6000,
-              });
-              localStorage.removeItem('hustlesoul_referrer_id');
-            }
-          }
-        } else {
-          throw new Error(data.error || 'Failed to process user data from login API');
-        }
-      } catch (error) {
-        console.error('Error in handleLoginAndUserCreation:', error);
-        toast({
-          title: 'Login Error',
-          description: (error as Error).message || 'Could not log in or create user.',
-          variant: 'destructive',
-        });
-        await fetchUserData(true);
-      }
-    } else {
-       await fetchUserData(true); 
-       if (!currentUser && !contextLoadingUser) {
-          toast({ title: 'Error', description: 'Could not identify Telegram user.', variant: 'destructive' });
-       }
-    }
-  }, [contextLoadingUser, currentUser, toast, updateUserSession, fetchUserData, initialLoginAttempted]);
-
+  // This effect runs once on mount to signal Telegram WebApp is ready.
   useEffect(() => {
-    if (!contextLoadingUser && !currentUser && !initialLoginAttempted) {
-      handleLoginAndUserCreation();
-    }
-     if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
+    if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
         (window as any).Telegram.WebApp.ready();
     }
-  }, [contextLoadingUser, currentUser, handleLoginAndUserCreation, initialLoginAttempted]);
+  }, []);
 
 
-  if (contextLoadingUser && !currentUser && !initialLoginAttempted) { // Show loader if context is loading AND user not set AND login not yet attempted
+  // Login/User creation logic is now primarily handled by UserProvider.
+  // This page can react to currentUser changes from the context.
+  // If specific welcome toasts are needed, they could be triggered if UserProvider
+  // exposes information about a new user session or if login API response is handled here.
+  // For simplicity, keeping existing toast logic in UserProvider if it's already there.
+
+  if (contextLoadingUser && !currentUser) {
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4">
@@ -180,17 +79,20 @@ export default function DashboardPage() {
           <QuickActionGrid />
         </div>
 
-        <Card className="mt-8 bg-card/70">
+        <Card className="mt-8 bg-card/70 border border-border/50 shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl text-foreground flex items-center gap-2">
               <Megaphone className="h-6 w-6 text-accent" />
-              Advertisement Banner
+              Featured Promotion / Announcement
             </CardTitle>
-            <CardDescription>Sponsored content or important announcements could go here.</CardDescription>
+            <CardDescription>This space can be used for important updates or sponsored content.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="aspect-video bg-muted/50 rounded-lg flex items-center justify-center border border-dashed border-border">
-              <p className="text-muted-foreground text-sm">Your Ad Content Here</p>
+            <div className="aspect-[16/6] bg-muted/30 rounded-lg flex items-center justify-center border-2 border-dashed border-border/60 p-6">
+              <p className="text-muted-foreground text-center text-sm sm:text-base">
+                ✨ Your Exciting Ad Content or Game Update Here! ✨<br/>
+                <span className="text-xs">(This is a placeholder banner)</span>
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -199,5 +101,4 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
-
     

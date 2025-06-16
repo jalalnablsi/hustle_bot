@@ -19,21 +19,24 @@ export default function TasksPage() {
   useEffect(() => {
     const loadTasks = async () => {
       if (!currentUser?.id && !contextLoadingUser) { 
-        setIsLoadingTasks(false);
+        setIsLoadingTasks(false); // Stop loading if no user context is expected
+        // Optionally, prompt for login or show a message if user is required for tasks
         return;
       }
       setIsLoadingTasks(true);
       setErrorLoadingTasks(null);
       try {
-        const res = await fetch('/api/tasks'); 
+        const res = await fetch('/api/tasks'); // Assumes API uses cookie/session for userId
         const data = await res.json();
 
         if (!data.success) {
           throw new Error(data.error || 'Could not load tasks from server.');
         }
+        // Ensure task.platform is correctly passed to TaskItem for icon mapping
         setTasks(data.tasks.map((task: any) => ({
             ...task,
-            icon: task.platform, // Pass platform string, TaskItem will map to icon
+            // icon property in Task type is now just the platform string like 'twitter'
+            // TaskItem component will handle mapping this to an icon component
         })));
       } catch (error: any) {
         console.error('Error loading tasks:', error.message);
@@ -43,7 +46,7 @@ export default function TasksPage() {
         setIsLoadingTasks(false);
       }
     };
-    if (!contextLoadingUser) {
+    if (!contextLoadingUser) { // Start loading tasks once user context is no longer loading (user might be null or fetched)
         loadTasks();
     }
   }, [currentUser?.id, contextLoadingUser, toast]);
@@ -56,15 +59,13 @@ export default function TasksPage() {
     const taskToComplete = tasks.find(t => t.id === taskId);
     if (!taskToComplete || taskToComplete.isCompleted) return;
 
-    // For tasks page, we might not need a global loading state for individual task submission
-    // TaskItem itself handles its own 'isCompleting' state.
-    // setIsLoadingTasks(true); 
+    // Individual task completion loading is handled within TaskItem
     try {
         const payload: { userId: string; taskId: string; userInput?: string } = {
             userId: currentUser.id,
             taskId,
         };
-        if (userInput) {
+        if (userInput && taskToComplete.requires_user_input) { // Send userInput only if task requires it
             payload.userInput = userInput;
         }
 
@@ -77,7 +78,7 @@ export default function TasksPage() {
 
         if (data.success) {
             setTasks(prev => prev.map(task => task.id === taskId ? { ...task, isCompleted: true } : task ));
-            updateUserSession({
+            updateUserSession({ // Update global user points
                 gold_points: data.totalGold,
                 diamond_points: data.totalDiamonds,
             });
@@ -91,8 +92,6 @@ export default function TasksPage() {
         }
     } catch (error: any) {
         toast({ title: "Task Completion Failed", description: error.message, variant: "destructive" });
-    } finally {
-        // setIsLoadingTasks(false);
     }
   };
 
@@ -100,7 +99,7 @@ export default function TasksPage() {
   const totalTasks = tasks.length;
   const progressPercentage = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
 
-  if (contextLoadingUser && !currentUser) { // Show loader only if context is loading AND user is not yet available
+  if (contextLoadingUser && !currentUser) {
     return (
         <AppShell>
             <div className="flex justify-center items-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))]">
@@ -132,7 +131,7 @@ export default function TasksPage() {
           )}
         </div>
 
-        {isLoadingTasks && !errorLoadingTasks && ( // This loader is for the initial task list fetch
+        {isLoadingTasks && !errorLoadingTasks && (
           <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
         )}
         {errorLoadingTasks && !isLoadingTasks && (
@@ -160,5 +159,4 @@ export default function TasksPage() {
     </AppShell>
   );
 }
-
     

@@ -11,7 +11,7 @@ const navItems = [
   { href: '/tasks', label: 'Tasks', icon: ListChecks },
   { href: '/referrals', label: 'Referrals', icon: Users },
   { href: '/wheel', label: 'Wheel', icon: Gift },
-  { href: '/ads', label: 'Watch & Earn', icon: Tv },
+  { href: '/ads', label: 'Watch & Earn', icon: Tv }, // Added Watch & Earn
   { href: '/leaderboard', label: 'Leaders', icon: Trophy },
   { href: '/games', label: 'Games', icon: Gamepad2 },
 ];
@@ -21,9 +21,9 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
-      <div className="mx-auto grid h-16 max-w-lg grid-cols-7 items-center px-1">
+      <div className="mx-auto grid h-16 max-w-lg grid-cols-7 items-center px-1"> {/* Adjusted to 7 columns */}
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.href === "/games" && pathname.startsWith("/games")); // Highlight /games for sub-routes
           return (
             <Link
               key={item.href}
@@ -33,7 +33,7 @@ export function BottomNav() {
                 isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <item.icon className={cn('h-5 w-5', isActive && (item.icon === Gift || item.icon === Tv) ? 'fill-primary stroke-primary-foreground' : isActive ? 'text-primary' : '')} />
+              <item.icon className={cn('h-5 w-5', isActive && (item.icon === Gift || item.icon === Tv || item.icon === Gamepad2) ? 'fill-primary stroke-primary-foreground' : isActive ? 'text-primary' : '')} />
               <span className="text-[0.6rem] leading-tight text-center truncate w-full">{item.label}</span>
             </Link>
           );
@@ -42,5 +42,4 @@ export function BottomNav() {
     </nav>
   );
 }
-
     

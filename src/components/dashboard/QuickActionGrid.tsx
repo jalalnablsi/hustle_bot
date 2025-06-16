@@ -1,12 +1,15 @@
 
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Zap, PlaySquare, Gamepad2, ArrowRight, Tv } from "lucide-react"; // Removed SlidersHorizontal
+import { Zap, Users, Gamepad2, ArrowRight, Tv, Trophy, ListChecks } from "lucide-react";
 
 const actions = [
   { title: "Spin the Wheel", description: "Try your luck for big prizes!", href: "/wheel", icon: Zap, color: "text-yellow-400" },
-  { title: "Watch Ads", description: "Earn Diamonds by watching short ads.", href: "/ads", icon: Tv, color: "text-sky-400" }, // Updated description for Ads
+  { title: "Watch Ads", description: "Earn Diamonds by watching short ads.", href: "/ads", icon: Tv, color: "text-sky-400" },
   { title: "Play Games", description: "Test your skills in Stake Builder!", href: "/games", icon: Gamepad2, color: "text-green-400" },
+  { title: "Refer Friends", description: "Invite friends & earn together.", href: "/referrals", icon: Users, color: "text-pink-400" },
+  { title: "View Tasks", description: "Complete tasks for rewards.", href: "/tasks", icon: ListChecks, color: "text-orange-400" },
+  { title: "Leaderboard", description: "See who's on top!", href: "/leaderboard", icon: Trophy, color: "text-purple-400" },
 ];
 
 export function QuickActionGrid() {
@@ -33,5 +36,4 @@ export function QuickActionGrid() {
     </div>
   );
 }
-
     

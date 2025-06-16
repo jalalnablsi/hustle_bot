@@ -4,13 +4,12 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { TopThreeItem } from "@/components/leaderboard/TopThreeItem";
 import { LeaderboardItem } from "@/components/leaderboard/LeaderboardItem";
-import { Trophy, Coins, Users, BarChartBig, Loader2, AlertTriangle, UserCheck, Star } from "lucide-react";
+import { Trophy, Coins, Users, Star, Loader2, AlertTriangle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useEffect, useState, useMemo } from "react";
-import type { AppUser, LeaderboardEntry as GenericLeaderboardEntry } from "@/app/types";
+import type { LeaderboardEntry as GenericLeaderboardEntry } from "@/app/types";
 import { useUser } from "@/contexts/UserContext";
-import Image from "next/image";
 
 interface ApiLeaderboardData {
   top_scores: GenericLeaderboardEntry[];
@@ -20,14 +19,14 @@ interface ApiLeaderboardData {
     gold: number;
     referrals: number;
     scores: number;
-    scoreValue?: number; // User's actual score for context
+    scoreValue?: number;
   };
 }
 
 const rankNames: Record<number, string> = {
-  1: "The Sovereign", // Changed from King/Queen for more impact
-  2: "The High Lord/Lady", // Changed
-  3: "The Vanguard",      // Changed
+  1: "The Sovereign",
+  2: "The High Lord/Lady",
+  3: "The Vanguard",
 };
 
 function formatUserRank(rank: number | undefined | null): string {
@@ -52,26 +51,26 @@ export default function LeaderboardPage() {
           const errData = await response.json().catch(() => ({}));
           throw new Error(errData.error || `Failed to fetch leaderboard: ${response.status}`);
         }
-        const data = await response.json();
-        if (data.success && data.data) {
-          const processEntries = (entries: any[], pointField: string = 'points', isScore: boolean = false) => 
+        const apiResult = await response.json();
+        if (apiResult.success && apiResult.data) {
+          const processEntries = (entries: any[], pointField: string = 'points') =>
             (entries || []).map((entry, index) => ({
               ...entry,
-              rank: entry.rank || index + 1, // Use API rank if available, else calculate
-              points: Number(entry[pointField] || entry.score || entry.count || 0),
+              rank: entry.rank || index + 1,
+              points: Number(entry[pointField] || entry.score || entry.count || 0), // Ensure points is a number
               username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || 'Anonymous'}`,
-              avatarUrl: `https://placehold.co/128x128.png?text=${(entry.username || entry.users?.username || 'P').substring(0,2).toUpperCase()}`,
+              avatarUrl: `https://placehold.co/128x128.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}`,
               dataAiHint: "avatar person",
             }));
-          
+
           setLeaderboardData({
-            top_gold: processEntries(data.data.top_gold || [], 'points'),
-            top_scores: processEntries(data.data.top_scores || [], 'points', true),
-            top_referrals: processEntries(data.data.top_referrals || [], 'points'), // API uses 'points' for referral count
-            user_rank: data.data.user_rank || { gold: 0, referrals: 0, scores: 0 },
+            top_gold: processEntries(apiResult.data.top_gold || [], 'points'),
+            top_scores: processEntries(apiResult.data.top_scores || [], 'points'),
+            top_referrals: processEntries(apiResult.data.top_referrals || [], 'points'),
+            user_rank: apiResult.data.user_rank || { gold: 0, referrals: 0, scores: 0, scoreValue: 0 },
           });
         } else {
-          throw new Error(data.error || 'Leaderboard data format incorrect.');
+          throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
         }
       } catch (err: any) {
         setError(err.message);
@@ -84,7 +83,7 @@ export default function LeaderboardPage() {
   }, []);
 
   const UserRankDisplay = ({ category, rank, score }: { category: string; rank: number | null | undefined; score?: number | null | undefined}) => (
-    <Card className="bg-primary/10 border-primary/30 shadow-md">
+    <Card className="bg-primary/10 border-primary/30 shadow-md my-4">
       <CardHeader className="pb-2 pt-3 px-4">
         <CardTitle className="text-sm font-semibold text-primary/90">Your Rank in {category}</CardTitle>
       </CardHeader>
@@ -103,7 +102,7 @@ export default function LeaderboardPage() {
     userRankValue?: number | null,
     userScoreValue?: number | null
   ) => {
-    if (!entries || entries.length === 0) {
+    if (!entries || entries.length === 0 && !isLoading) {
       return (
         <div className="text-center py-8">
           <p className="text-muted-foreground mb-3">No data available for {title} yet.</p>
@@ -112,7 +111,7 @@ export default function LeaderboardPage() {
       );
     }
     const topThree = entries.slice(0, 3);
-    const restOfTheList = entries.slice(3, 100); // Display up to 100
+    const restOfTheList = entries.slice(3, 100);
     const IconComponent = icon;
 
     return (
@@ -123,7 +122,7 @@ export default function LeaderboardPage() {
         </div>
 
         {currentUser && userRankValue !== undefined && (
-          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-lg mx-auto">
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
              <UserRankDisplay category={title} rank={userRankValue} score={userScoreValue} />
           </div>
         )}
@@ -157,7 +156,7 @@ export default function LeaderboardPage() {
           <Trophy className="mx-auto h-16 w-16 text-yellow-400 mb-4 animate-pulse [animation-duration:1.5s] filter drop-shadow-[0_2px_10px_hsl(var(--primary)/0.5)]" />
           <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">Hall of Hustlers</h1>
           <p className="text-lg text-muted-foreground">
-            Dominance. Glory. Rewards. See where you stand.
+            See where you stand among the elite.
           </p>
         </div>
 
@@ -184,7 +183,7 @@ export default function LeaderboardPage() {
               {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank.gold, Number(currentUser?.gold_points))}
             </TabsContent>
             <TabsContent value="scores">
-              {renderLeaderboardSection("Top Game Scores (Stake Builder)", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank.scores, leaderboardData.user_rank.scoreValue)}
+              {renderLeaderboardSection("Top Game Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank.scores, leaderboardData.user_rank.scoreValue)}
             </TabsContent>
             <TabsContent value="referrals">
               {renderLeaderboardSection("Top Referrers", leaderboardData.top_referrals, "Referrals", Users, leaderboardData.user_rank.referrals, currentUser?.referrals_made)}
@@ -195,5 +194,4 @@ export default function LeaderboardPage() {
     </AppShell>
   );
 }
-
     

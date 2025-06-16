@@ -1,4 +1,7 @@
+
 import { config } from 'dotenv';
 config();
 
-import '@/ai/flows/optimize-airdrop-amount.ts';
+// Removed: import '@/ai/flows/optimize-airdrop-amount.ts';
+// The optimize-airdrop-amount flow has been deleted.
+    
