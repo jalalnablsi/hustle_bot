@@ -7,13 +7,12 @@ import { CheckSquare, ExternalLink, Zap, Twitter, Youtube, MessageSquare, Send, 
 import { cn } from "@/lib/utils";
 import { useToast } from '@/hooks/use-toast';
 
-// Ensure platformIcons correctly maps platform strings to LucideIcon components
 const platformIcons: { [key: string]: LucideIcon } = {
   twitter: Twitter,
   youtube: Youtube,
   discord: MessageSquare,
   telegram: Send,
-  referral: Users, // Assuming 'referral' might be a platform type
+  referral: Users,
   default: HelpCircle,
 };
 
@@ -23,13 +22,12 @@ export interface Task {
   description: string;
   reward: number;
   rewardCurrency: 'GOLD' | 'DIAMOND' | 'GEM_PURPLE' | 'GEM_BLUE' | 'SPIN';
-  actionText: string; // Original action text like "Go to Tweet", "Join Channel"
+  actionText: string;
   href?: string | null;
   isCompleted?: boolean;
-  platform?: string; // e.g., "twitter", "telegram", "youtube"
-  requires_user_input?: boolean; // If true, input field is needed
-  input_placeholder?: string | null; // Placeholder for the input field
-  // 'icon' prop is removed from Task type, it's derived from 'platform'
+  platform?: string;
+  requires_user_input?: boolean;
+  input_placeholder?: string | null;
 }
 
 interface TaskItemProps {
@@ -42,34 +40,28 @@ export function TaskItem({ task, onComplete }: TaskItemProps) {
   const { toast } = useToast();
   const [userInput, setUserInput] = useState('');
   const [isCompleting, setIsCompleting] = useState(false);
-  // This state tracks if the user has clicked an external link and now needs to provide input
   const [needsVerificationInput, setNeedsVerificationInput] = useState(false);
 
-  const isTwitterTaskWithInput = task.platform?.toLowerCase() === 'twitter' && task.requires_user_input;
+  const isPlatformTaskWithInput = (task.platform?.toLowerCase() === 'twitter' || task.platform?.toLowerCase() === 'telegram') && task.requires_user_input;
 
   const handleActionClick = async () => {
     if (task.isCompleted || isCompleting) return;
 
     if (task.href && !task.href.startsWith('/') && !needsVerificationInput) {
-      // User clicks the initial link (e.g., "Go to Tweet")
       window.open(task.href, '_blank', 'noopener,noreferrer');
-      if (isTwitterTaskWithInput) {
-        setNeedsVerificationInput(true); // Show input field after they've gone to Twitter
-      } else if (!task.requires_user_input) {
-        // For tasks without input that have an external link, user might need to click "Verify" separately
-        // For now, we assume they click "Verify" after performing the action if no input is needed.
-        // Or, a "Verify Task" button appears after this click.
-        // To simplify, if no input needed, this state implies a "Verify" step is next.
+      if (isPlatformTaskWithInput || task.requires_user_input) { // Broaden condition for showing input/verify
         setNeedsVerificationInput(true);
+      } else if (!task.requires_user_input) {
+        // For tasks that just need an external link click and then verify
+        setNeedsVerificationInput(true); // Still show "Verify Task" button
       }
-      return; // Don't proceed to onComplete yet
+      return;
     }
 
-    // This part handles "Verify Task" click or direct completion for tasks without external links
-    if (isTwitterTaskWithInput && !userInput.trim()) {
+    if (needsVerificationInput && isPlatformTaskWithInput && !userInput.trim()) {
       toast({
         title: "Input Required",
-        description: `Please enter your ${task.platform} username.`,
+        description: `Please enter your ${task.platform} username or required input.`,
         variant: "destructive",
       });
       return;
@@ -77,18 +69,18 @@ export function TaskItem({ task, onComplete }: TaskItemProps) {
 
     setIsCompleting(true);
     try {
-      await onComplete(task.id, isTwitterTaskWithInput ? userInput.trim() : undefined);
+      await onComplete(task.id, (isPlatformTaskWithInput || task.requires_user_input) ? userInput.trim() : undefined);
       // Parent (TasksPage) will handle success toast and state update
     } catch (error) {
       // Parent (TasksPage) likely handles error toast
       console.error("TaskItem completion error:", error);
     } finally {
       setIsCompleting(false);
-      if (isTwitterTaskWithInput) setNeedsVerificationInput(false); // Reset for next time if needed
+      // Do not reset needsVerificationInput here, parent will re-render with updated task.isCompleted
     }
   };
 
-  let buttonText = task.actionText; // Default, e.g., "Join Telegram"
+  let buttonText = task.actionText;
   let showExternalLinkIcon = task.href && !task.href.startsWith('/') && !needsVerificationInput;
 
   if (task.isCompleted) {
@@ -122,9 +114,11 @@ export function TaskItem({ task, onComplete }: TaskItemProps) {
         <CardDescription className="text-muted-foreground pt-1 text-sm">{task.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex-grow">
-        {needsVerificationInput && isTwitterTaskWithInput && !task.isCompleted && (
+        {needsVerificationInput && (isPlatformTaskWithInput || task.requires_user_input) && !task.isCompleted && (
           <div className="space-y-1.5 mb-3">
-            <label htmlFor={`platform-input-${task.id}`} className="text-xs font-medium text-muted-foreground">Your {task.platform} Username (e.g., @username)</label>
+            <label htmlFor={`platform-input-${task.id}`} className="text-xs font-medium text-muted-foreground">
+              {task.input_placeholder || `Your ${task.platform || 'input'}`}
+            </label>
             <Input
               id={`platform-input-${task.id}`}
               type="text"
@@ -136,8 +130,7 @@ export function TaskItem({ task, onComplete }: TaskItemProps) {
             />
           </div>
         )}
-         {/* Message after clicking external link for non-input tasks */}
-         {needsVerificationInput && !isTwitterTaskWithInput && !task.isCompleted && (
+         {needsVerificationInput && !(isPlatformTaskWithInput || task.requires_user_input) && !task.isCompleted && (
           <div className="text-xs text-primary/80 italic my-2 flex items-center gap-1.5">
             <Info size={14}/> After completing the action on {task.platform || 'the linked page'}, click "Verify Task" below.
           </div>
@@ -146,15 +139,15 @@ export function TaskItem({ task, onComplete }: TaskItemProps) {
       <CardFooter>
         <Button
             onClick={handleActionClick}
-            className={cn("w-full transition-all", 
-                task.isCompleted ? "bg-green-600/20 text-green-400 border-green-600/30 hover:bg-green-600/30" 
+            className={cn("w-full transition-all",
+                task.isCompleted ? "bg-green-600/20 text-green-400 border-green-600/30 hover:bg-green-600/30"
                                 : "bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90"
             )}
-            disabled={isCompleting || task.isCompleted || (needsVerificationInput && isTwitterTaskWithInput && !userInput.trim())}
+            disabled={isCompleting || task.isCompleted || (needsVerificationInput && (isPlatformTaskWithInput || task.requires_user_input) && !userInput.trim())}
             variant={task.isCompleted ? "outline" : "default"}
             size="lg"
         >
-            {isCompleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
+            {isCompleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           : task.isCompleted ? <CheckSquare className="mr-2 h-4 w-4" /> : null}
             {buttonText}
             {showExternalLinkIcon && <ExternalLink className="ml-2 h-4 w-4" />}

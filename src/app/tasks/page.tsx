@@ -3,10 +3,10 @@
 
 import { useEffect, useState } from 'react';
 import { AppShell } from "@/components/layout/AppShell";
-import { TaskItem, type Task } from "@/components/tasks/TaskItem"; 
+import { TaskItem, type Task } from "@/components/tasks/TaskItem";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from '@/contexts/UserContext';
-import { Loader2, ListChecks, CheckCircle, AlertTriangle, Info } from 'lucide-react';
+import { Loader2, ListChecks, CheckCircle, AlertTriangle, Info, Coins, Gem } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 export default function TasksPage() {
@@ -18,25 +18,22 @@ export default function TasksPage() {
 
   useEffect(() => {
     const loadTasks = async () => {
-      if (!currentUser?.id && !contextLoadingUser) { 
-        setIsLoadingTasks(false); // Stop loading if no user context is expected
-        // Optionally, prompt for login or show a message if user is required for tasks
+      if (!currentUser?.id && !contextLoadingUser) {
+        setIsLoadingTasks(false);
         return;
       }
       setIsLoadingTasks(true);
       setErrorLoadingTasks(null);
       try {
-        const res = await fetch('/api/tasks'); // Assumes API uses cookie/session for userId
+        const res = await fetch('/api/tasks');
         const data = await res.json();
 
         if (!data.success) {
           throw new Error(data.error || 'Could not load tasks from server.');
         }
-        // Ensure task.platform is correctly passed to TaskItem for icon mapping
         setTasks(data.tasks.map((task: any) => ({
             ...task,
-            // icon property in Task type is now just the platform string like 'twitter'
-            // TaskItem component will handle mapping this to an icon component
+            // platform is used directly by TaskItem to pick icon
         })));
       } catch (error: any) {
         console.error('Error loading tasks:', error.message);
@@ -46,7 +43,7 @@ export default function TasksPage() {
         setIsLoadingTasks(false);
       }
     };
-    if (!contextLoadingUser) { // Start loading tasks once user context is no longer loading (user might be null or fetched)
+    if (!contextLoadingUser) {
         loadTasks();
     }
   }, [currentUser?.id, contextLoadingUser, toast]);
@@ -54,18 +51,17 @@ export default function TasksPage() {
   const handleCompleteTask = async (taskId: string, userInput?: string) => {
     if (!currentUser?.id) {
         toast({ title: "Error", description: "User not logged in.", variant: "destructive"});
-        return;
+        return Promise.resolve(); // Return a resolved promise for type consistency
     }
     const taskToComplete = tasks.find(t => t.id === taskId);
-    if (!taskToComplete || taskToComplete.isCompleted) return;
+    if (!taskToComplete || taskToComplete.isCompleted) return Promise.resolve();
 
-    // Individual task completion loading is handled within TaskItem
     try {
         const payload: { userId: string; taskId: string; userInput?: string } = {
             userId: currentUser.id,
             taskId,
         };
-        if (userInput && taskToComplete.requires_user_input) { // Send userInput only if task requires it
+        if (userInput && (taskToComplete.requires_user_input || taskToComplete.platform?.toLowerCase() === 'twitter' || taskToComplete.platform?.toLowerCase() === 'telegram') ) {
             payload.userInput = userInput;
         }
 
@@ -78,7 +74,7 @@ export default function TasksPage() {
 
         if (data.success) {
             setTasks(prev => prev.map(task => task.id === taskId ? { ...task, isCompleted: true } : task ));
-            updateUserSession({ // Update global user points
+            updateUserSession({
                 gold_points: data.totalGold,
                 diamond_points: data.totalDiamonds,
             });
@@ -88,10 +84,11 @@ export default function TasksPage() {
                 icon: data.rewardType === 'gold' ? <Coins className="h-6 w-6 text-yellow-500" /> : <Gem className="h-6 w-6 text-sky-400" />,
             });
         } else {
-            throw new Error(data.error || 'Could not complete this task.');
+            // This is where the error toast should be triggered
+            toast({ title: "Task Completion Failed", description: data.error || 'Could not complete this task.', variant: "destructive" });
         }
     } catch (error: any) {
-        toast({ title: "Task Completion Failed", description: error.message, variant: "destructive" });
+        toast({ title: "Task Completion Failed", description: error.message || 'An unexpected error occurred.', variant: "destructive" });
     }
   };
 
