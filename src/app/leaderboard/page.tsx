@@ -6,20 +6,21 @@ import { TopThreeItem } from "@/components/leaderboard/TopThreeItem";
 import { LeaderboardItem } from "@/components/leaderboard/LeaderboardItem";
 import { Trophy, Coins, Users, Star, Loader2, AlertTriangle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEffect, useState, useCallback } from "react";
 import type { LeaderboardEntry as GenericLeaderboardEntry } from "@/app/types";
 import { useUser } from "@/contexts/UserContext";
+import { cn } from "@/lib/utils";
 
 interface ApiLeaderboardData {
   top_scores: GenericLeaderboardEntry[];
   top_gold: GenericLeaderboardEntry[];
   top_referrals: GenericLeaderboardEntry[];
   user_rank: {
-    gold: number;
-    referrals: number;
-    scores: number;
-    scoreValue?: number;
+    gold: number | null;
+    referrals: number | null;
+    scores: number | null;
+    scoreValue?: number | null;
   };
 }
 
@@ -29,7 +30,7 @@ const rankNames: Record<number, string> = {
   3: "The Vanguard",
 };
 
-function formatUserRank(rank: number | undefined | null): string {
+function formatUserRankDisplay(rank: number | undefined | null): string {
   if (rank === undefined || rank === null || rank <= 0) return "N/A";
   if (rank > 100) return "100+";
   return rank.toString();
@@ -45,7 +46,7 @@ export default function LeaderboardPage() {
     return (entries || []).map((entry, index) => ({
       ...entry,
       rank: entry.rank || index + 1,
-      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
+      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0), // Ensure points are numbers
       username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
       avatarUrl: `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700' : entry.rank === 2 ? 'C0C0C0' : entry.rank === 3 ? 'CD7F32' : '667EEA'}/FFFFFF.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}`,
       dataAiHint: "avatar person",
@@ -68,7 +69,7 @@ export default function LeaderboardPage() {
             top_gold: processEntries(apiResult.data.top_gold, 'points'),
             top_scores: processEntries(apiResult.data.top_scores, 'points'),
             top_referrals: processEntries(apiResult.data.top_referrals, 'points'),
-            user_rank: apiResult.data.user_rank || { gold: 0, referrals: 0, scores: 0, scoreValue: 0 },
+            user_rank: apiResult.data.user_rank || { gold: null, referrals: null, scores: null, scoreValue: null },
           });
         } else {
           throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
@@ -83,13 +84,13 @@ export default function LeaderboardPage() {
     fetchLeaderboard();
   }, [processEntries]);
 
-  const UserRankDisplay = ({ category, rank, score }: { category: string; rank: number | null | undefined; score?: number | null | undefined}) => (
-    <Card className="bg-primary/10 border-primary/30 shadow-md my-2 sm:my-4 w-full">
+  const UserRankDisplayCard = ({ category, rank, score }: { category: string; rank: number | null | undefined; score?: number | null | undefined}) => (
+    <Card className="bg-primary/10 border-primary/30 shadow-md my-2 sm:my-4 w-full max-w-xs mx-auto">
       <CardHeader className="pb-2 pt-3 px-3 sm:px-4">
         <CardTitle className="text-xs sm:text-sm font-semibold text-primary/90">Your Rank in {category}</CardTitle>
       </CardHeader>
       <CardContent className="px-3 sm:px-4 pb-3">
-        <p className="text-xl sm:text-2xl font-bold text-foreground">{formatUserRank(rank)}</p>
+        <p className="text-xl sm:text-2xl font-bold text-foreground">{formatUserRankDisplay(rank)}</p>
         {(score !== undefined && score !== null && score > 0) && <p className="text-xs text-muted-foreground">Value: {score.toLocaleString()}</p>}
       </CardContent>
     </Card>
@@ -114,13 +115,19 @@ export default function LeaderboardPage() {
       return (
         <div className="text-center py-6 sm:py-8">
           <p className="text-muted-foreground mb-2 sm:mb-3">No data available for {title} yet.</p>
-          {currentUser && userRankValue !== undefined && <div className="max-w-xs mx-auto"><UserRankDisplay category={title} rank={userRankValue} score={userScoreValue} /></div>}
+          {currentUser && userRankValue !== undefined && <UserRankDisplayCard category={title} rank={userRankValue} score={userScoreValue} />}
         </div>
       );
     }
+    
     const topThree = entries.slice(0, 3);
     const restOfTheList = entries.slice(3, 100);
     const IconComponent = icon;
+
+    // Ensure topThree has items before trying to find specific ranks
+    const rank1User = topThree.find(u => u.rank === 1);
+    const rank2User = topThree.find(u => u.rank === 2);
+    const rank3User = topThree.find(u => u.rank === 3);
 
     return (
       <div className="space-y-6 sm:space-y-8">
@@ -130,24 +137,30 @@ export default function LeaderboardPage() {
         </div>
 
         {currentUser && userRankValue !== undefined && (
-          <div className="mb-4 sm:mb-6 max-w-xs mx-auto sm:max-w-sm">
-             <UserRankDisplay category={title} rank={userRankValue} score={userScoreValue} />
+          <div className="mb-4 sm:mb-6">
+             <UserRankDisplayCard category={title} rank={userRankValue} score={userScoreValue} />
           </div>
         )}
 
         {topThree.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 sm:mb-10 items-end px-1 sm:px-2 md:px-0">
-            {/* Order for mobile: 1st, then 2nd, then 3rd. For larger screens, podium style. */}
-            {topThree.find(u => u.rank === 1) && <div className="order-1 sm:order-2"><TopThreeItem {...topThree.find(u => u.rank === 1)!} currency={pointSuffix} rankNameOverride={rankNames[1]} /></div>}
-            {topThree.find(u => u.rank === 2) && <div className="order-2 sm:order-1"><TopThreeItem {...topThree.find(u => u.rank === 2)!} currency={pointSuffix} rankNameOverride={rankNames[2]} /></div>}
-            {topThree.find(u => u.rank === 3) && <div className="order-3 sm:order-3"><TopThreeItem {...topThree.find(u => u.rank === 3)!} currency={pointSuffix} rankNameOverride={rankNames[3]} /></div>}
+          <div className="grid grid-cols-3 gap-2 xs:gap-3 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0">
+            {/* Mobile & Desktop: Rank 2 (left), Rank 1 (center, prominent), Rank 3 (right) */}
+            <div className="col-span-1 flex justify-center order-2 sm:order-1">
+              {rank2User && <TopThreeItem {...rank2User} currency={pointSuffix} rankNameOverride={rankNames[2]} />}
+            </div>
+            <div className="col-span-1 flex justify-center order-1 sm:order-2">
+              {rank1User && <TopThreeItem {...rank1User} currency={pointSuffix} rankNameOverride={rankNames[1]} />}
+            </div>
+            <div className="col-span-1 flex justify-center order-3 sm:order-3">
+              {rank3User && <TopThreeItem {...rank3User} currency={pointSuffix} rankNameOverride={rankNames[3]} />}
+            </div>
           </div>
         )}
 
         {restOfTheList.length > 0 && (
           <div>
             <h3 className="font-headline text-lg sm:text-xl font-semibold text-foreground mb-3 sm:mb-4 text-center md:text-left">Top Contenders (4-100)</h3>
-            <div className="space-y-2 sm:space-y-3 bg-card p-2 sm:p-4 rounded-lg shadow-md max-h-[500px] sm:max-h-[600px] overflow-y-auto">
+            <div className="space-y-2 sm:space-y-3 bg-card p-2 sm:p-3 rounded-lg shadow-md max-h-[500px] sm:max-h-[600px] overflow-y-auto">
               {restOfTheList.map((user) => (
                 <LeaderboardItem key={`${title}-${user.rank}-${user.username}`} {...user} currency={pointSuffix} />
               ))}
@@ -203,5 +216,4 @@ export default function LeaderboardPage() {
     </AppShell>
   );
 }
-
     
