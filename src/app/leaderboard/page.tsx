@@ -7,7 +7,7 @@ import { LeaderboardItem } from "@/components/leaderboard/LeaderboardItem";
 import { Trophy, Coins, Users, Star, Loader2, AlertTriangle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import type { LeaderboardEntry as GenericLeaderboardEntry } from "@/app/types";
 import { useUser } from "@/contexts/UserContext";
 
@@ -48,7 +48,7 @@ export default function LeaderboardPage() {
       try {
         const response = await fetch('/api/leaderboard');
         if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
+          const errData = await response.json().catch(() => ({ error: "Failed to parse error from server" }));
           throw new Error(errData.error || `Failed to fetch leaderboard: ${response.status}`);
         }
         const apiResult = await response.json();
@@ -56,19 +56,20 @@ export default function LeaderboardPage() {
           const processEntries = (entries: any[], pointField: string = 'points') =>
             (entries || []).map((entry, index) => ({
               ...entry,
-              rank: entry.rank || index + 1,
-              points: Number(entry[pointField] || entry.score || entry.count || 0), // Ensure points is a number
-              username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || 'Anonymous'}`,
+              rank: entry.rank || index + 1, // Use provided rank or calculate
+              points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
+              username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
               avatarUrl: `https://placehold.co/128x128.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}`,
               dataAiHint: "avatar person",
             }));
-
+          
           setLeaderboardData({
-            top_gold: processEntries(apiResult.data.top_gold || [], 'points'),
-            top_scores: processEntries(apiResult.data.top_scores || [], 'points'),
-            top_referrals: processEntries(apiResult.data.top_referrals || [], 'points'),
+            top_gold: processEntries(apiResult.data.top_gold, 'points'), // API returns points as string for gold, Number() handles it
+            top_scores: processEntries(apiResult.data.top_scores, 'points'),
+            top_referrals: processEntries(apiResult.data.top_referrals, 'points'), // API uses 'points' for referral count
             user_rank: apiResult.data.user_rank || { gold: 0, referrals: 0, scores: 0, scoreValue: 0 },
           });
+
         } else {
           throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
         }
@@ -89,7 +90,7 @@ export default function LeaderboardPage() {
       </CardHeader>
       <CardContent className="px-4 pb-3">
         <p className="text-2xl font-bold text-foreground">{formatUserRank(rank)}</p>
-        {score !== undefined && score !== null && <p className="text-xs text-muted-foreground">Score: {score.toLocaleString()}</p>}
+        {(score !== undefined && score !== null && score > 0) && <p className="text-xs text-muted-foreground">Value: {score.toLocaleString()}</p>}
       </CardContent>
     </Card>
   );
@@ -102,7 +103,14 @@ export default function LeaderboardPage() {
     userRankValue?: number | null,
     userScoreValue?: number | null
   ) => {
-    if (!entries || entries.length === 0 && !isLoading) {
+    if (isLoading) {
+        return (
+          <div className="flex justify-center items-center py-20">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          </div>
+        );
+    }
+    if (!entries || entries.length === 0) {
       return (
         <div className="text-center py-8">
           <p className="text-muted-foreground mb-3">No data available for {title} yet.</p>
@@ -111,7 +119,7 @@ export default function LeaderboardPage() {
       );
     }
     const topThree = entries.slice(0, 3);
-    const restOfTheList = entries.slice(3, 100);
+    const restOfTheList = entries.slice(3, 100); // Limit to top 100 display
     const IconComponent = icon;
 
     return (
@@ -138,7 +146,7 @@ export default function LeaderboardPage() {
         {restOfTheList.length > 0 && (
           <div>
             <h3 className="font-headline text-xl font-semibold text-foreground mb-4 text-center md:text-left">Top Contenders (4-100)</h3>
-            <div className="space-y-3 bg-card p-4 rounded-lg shadow-md max-h-[600px] overflow-y-auto">
+            <div className="space-y-3 bg-card p-2 sm:p-4 rounded-lg shadow-md max-h-[600px] overflow-y-auto">
               {restOfTheList.map((user) => (
                 <LeaderboardItem key={`${title}-${user.rank}-${user.username}`} {...user} currency={pointSuffix} />
               ))}
@@ -160,7 +168,7 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        {isLoading && (
+        {isLoading && !leaderboardData && (
           <div className="flex justify-center items-center py-20">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
           </div>
@@ -183,7 +191,7 @@ export default function LeaderboardPage() {
               {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank.gold, Number(currentUser?.gold_points))}
             </TabsContent>
             <TabsContent value="scores">
-              {renderLeaderboardSection("Top Game Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank.scores, leaderboardData.user_rank.scoreValue)}
+              {renderLeaderboardSection("Stake Builder Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank.scores, leaderboardData.user_rank.scoreValue)}
             </TabsContent>
             <TabsContent value="referrals">
               {renderLeaderboardSection("Top Referrers", leaderboardData.top_referrals, "Referrals", Users, leaderboardData.user_rank.referrals, currentUser?.referrals_made)}
@@ -194,4 +202,3 @@ export default function LeaderboardPage() {
     </AppShell>
   );
 }
-    
