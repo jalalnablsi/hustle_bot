@@ -1,3 +1,5 @@
+
+      
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -92,3 +94,30 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .animate-pulse-glow-yellow {
+    animation: pulse-glow-yellow 2s infinite ease-in-out;
+  }
+  .animate-pulse-glow-slate {
+    animation: pulse-glow-slate 2.2s infinite ease-in-out;
+  }
+  .animate-pulse-glow-orange {
+    animation: pulse-glow-orange 2.4s infinite ease-in-out;
+  }
+
+  @keyframes pulse-glow-yellow {
+    0%, 100% { box-shadow: 0 0 5px hsl(var(--primary)), 0 0 10px theme('colors.yellow.400'); transform: scale(1); }
+    50% { box-shadow: 0 0 15px hsl(var(--primary)), 0 0 30px theme('colors.yellow.400'); transform: scale(1.03); }
+  }
+  @keyframes pulse-glow-slate {
+    0%, 100% { box-shadow: 0 0 4px theme('colors.slate.500'); transform: scale(1); }
+    50% { box-shadow: 0 0 12px theme('colors.slate.400'); transform: scale(1.02); }
+  }
+   @keyframes pulse-glow-orange {
+    0%, 100% { box-shadow: 0 0 4px theme('colors.orange.600'); transform: scale(1); }
+    50% { box-shadow: 0 0 12px theme('colors.orange.500'); transform: scale(1.02); }
+  }
+}
+
+    

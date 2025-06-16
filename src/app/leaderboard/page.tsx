@@ -1,4 +1,5 @@
 
+      
 'use client';
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -24,7 +25,7 @@ interface ApiLeaderboardData {
   };
 }
 
-const rankNames: Record<number, string> = {
+const rankTitles: Record<number, string> = {
   1: "The Sovereign",
   2: "The High Lord/Lady",
   3: "The Vanguard",
@@ -46,9 +47,9 @@ export default function LeaderboardPage() {
     return (entries || []).map((entry, index) => ({
       ...entry,
       rank: entry.rank || index + 1,
-      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0), // Ensure points are numbers
+      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
       username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
-      avatarUrl: `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700' : entry.rank === 2 ? 'C0C0C0' : entry.rank === 3 ? 'CD7F32' : '667EEA'}/FFFFFF.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}`,
+      avatarUrl: `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700/000000' : entry.rank === 2 ? 'C0C0C0/000000' : entry.rank === 3 ? 'CD7F32/000000' : '667EEA/FFFFFF'}.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}&font=roboto`,
       dataAiHint: "avatar person",
     }));
   }, []);
@@ -124,7 +125,6 @@ export default function LeaderboardPage() {
     const restOfTheList = entries.slice(3, 100);
     const IconComponent = icon;
 
-    // Ensure topThree has items before trying to find specific ranks
     const rank1User = topThree.find(u => u.rank === 1);
     const rank2User = topThree.find(u => u.rank === 2);
     const rank3User = topThree.find(u => u.rank === 3);
@@ -143,16 +143,16 @@ export default function LeaderboardPage() {
         )}
 
         {topThree.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 xs:gap-3 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0">
-            {/* Mobile & Desktop: Rank 2 (left), Rank 1 (center, prominent), Rank 3 (right) */}
-            <div className="col-span-1 flex justify-center order-2 sm:order-1">
-              {rank2User && <TopThreeItem {...rank2User} currency={pointSuffix} rankNameOverride={rankNames[2]} />}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 xs:gap-4 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0">
+            {/* Mobile: Rank 1 top, 2 and 3 below. Desktop: 2, 1 (center), 3 */}
+            <div className="sm:col-span-1 flex justify-center order-2 sm:order-1">
+              {rank2User && <TopThreeItem {...rank2User} currency={pointSuffix} rankNameOverride={rankTitles[2]} />}
             </div>
-            <div className="col-span-1 flex justify-center order-1 sm:order-2">
-              {rank1User && <TopThreeItem {...rank1User} currency={pointSuffix} rankNameOverride={rankNames[1]} />}
+            <div className="sm:col-span-1 flex justify-center order-1 sm:order-2">
+              {rank1User && <TopThreeItem {...rank1User} currency={pointSuffix} rankNameOverride={rankTitles[1]} />}
             </div>
-            <div className="col-span-1 flex justify-center order-3 sm:order-3">
-              {rank3User && <TopThreeItem {...rank3User} currency={pointSuffix} rankNameOverride={rankNames[3]} />}
+            <div className="sm:col-span-1 flex justify-center order-3 sm:order-3">
+              {rank3User && <TopThreeItem {...rank3User} currency={pointSuffix} rankNameOverride={rankTitles[3]} />}
             </div>
           </div>
         )}
@@ -202,7 +202,7 @@ export default function LeaderboardPage() {
               <TabsTrigger value="referrals" className="text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 data-[state=active]:text-sky-400 py-1.5 sm:py-2"><Users className="h-3 w-3 sm:h-4 sm:w-4" />Top Referrers</TabsTrigger>
             </TabsList>
             <TabsContent value="gold">
-              {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank.gold, Number(currentUser?.gold_points))}
+              {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank.gold, currentUser?.gold_points !== undefined ? Number(currentUser.gold_points) : undefined)}
             </TabsContent>
             <TabsContent value="scores">
               {renderLeaderboardSection("Stake Builder Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank.scores, leaderboardData.user_rank.scoreValue)}
@@ -216,4 +216,5 @@ export default function LeaderboardPage() {
     </AppShell>
   );
 }
+
     
