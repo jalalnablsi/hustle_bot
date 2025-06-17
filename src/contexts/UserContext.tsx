@@ -11,7 +11,7 @@ interface UserContextType {
   setCurrentUser: (user: AppUser | null) => void;
   updateUserSession: (updatedUserData: Partial<AppUser>) => void;
   loadingUser: boolean;
-  fetchUserData: (isInitialAuth?: boolean) => Promise<AppUser | null>;
+  fetchUserData: (isInitialAuthAttempt?: boolean) => Promise<AppUser | null>;
   telegramAuthError: string | null;
 }
 
@@ -25,8 +25,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const webApp = useWebApp(); // Hook from @telegram-apps/sdk-react
   const initData = useInitData(); // Hook from @telegram-apps/sdk-react
 
-  const fetchUserData = useCallback(async (isInitialAuth = false): Promise<AppUser | null> => {
-    if (!isInitialAuth) setLoadingUser(true); // Only set loading if it's not part of the initial sequence driven by initData
+  const fetchUserData = useCallback(async (isInitialAuthAttempt = false): Promise<AppUser | null> => {
+    if (!isInitialAuthAttempt) setLoadingUser(true);
     
     try {
       const response = await fetch('/api/auth/me'); 
@@ -66,36 +66,40 @@ export function UserProvider({ children }: { children: ReactNode }) {
           return validatedUser;
         } else {
           setCurrentUser(null);
-          if (isInitialAuth && data.error) { // Only set general auth error if it's part of initial sequence and API returns error
+          if (isInitialAuthAttempt && data.error) {
             setTelegramAuthError(data.error === 'User not found. Please login again.' ? 'Session invalid or user not found. Please relaunch.' : data.error);
           }
         }
       } else {
         console.warn('UserContext: Failed to fetch user data from /api/auth/me, status:', response.status);
-        if (isInitialAuth) {
+        if (isInitialAuthAttempt) {
             setTelegramAuthError(`Failed to fetch user data (status: ${response.status}). Relaunch might be needed.`);
         }
         setCurrentUser(null);
       }
     } catch (error) {
       console.error('UserContext: Exception during fetch user data:', error);
-      if (isInitialAuth) {
+      if (isInitialAuthAttempt) {
         setTelegramAuthError('Network error while fetching user data. Check connection.');
       }
       setCurrentUser(null);
     } finally {
         // Ensure loading is set to false after any fetch attempt, especially initial ones
-        if (isInitialAuth || !currentUser) setLoadingUser(false);
+        // Only set loading false if it was an initial attempt or if user is still null.
+        // This prevents flickering if fetchUserData is called for a refresh.
+        if (isInitialAuthAttempt || !currentUser) {
+            setLoadingUser(false);
+        }
     }
     return null;
-  }, [currentUser]);
+  }, [currentUser]); // Added currentUser to dep array to re-evaluate loadingUser correctly
+
 
   useEffect(() => {
     // This effect handles the initial Telegram authentication flow
     // It depends on `initData` from the @telegram-apps/sdk-react hook
     // and the `webApp` object for SDK interactions.
-
-    setLoadingUser(true); // Start loading as soon as context is used
+    setLoadingUser(true);
     setTelegramAuthError(null);
 
     if (webApp && initData) { // initData is InitData from the SDK
@@ -127,49 +131,40 @@ export function UserProvider({ children }: { children: ReactNode }) {
           setLoadingUser(false);
         });
       } else {
-        // This case should ideally not happen if `initData` (the hook's result) is available,
-        // as `webApp.initData` (the raw string) should also be available.
-        // But as a fallback, try fetching user if a session might already exist.
-        console.warn("UserContext: SDK's initData object is available, but raw initData string is empty. This is unexpected. Attempting to fetch user data with existing session.");
+        // This case implies the `initData` object from the hook exists, but the raw string `webApp.initData` is empty.
+        // This is unusual if the hook provides `initData`.
+        console.warn("UserContext: SDK's initData object is available, but raw webApp.initData string is empty. This is unexpected. Attempting to fetch user data with existing session.");
         fetchUserData(true).catch(e => {
             setTelegramAuthError('initData string was empty, and fallback session fetch failed. Relaunch from Telegram.');
             setCurrentUser(null);
             setLoadingUser(false);
         });
       }
-    } else if (!initData && webApp) {
-        // WebApp SDK is available, but initData is not (yet).
-        // This might mean the app is not launched with user context or SDK is still initializing.
-        // The SDKProvider should handle initial loading. If initData remains null after a reasonable time,
-        // it implies an issue with how the Web App was launched.
-        console.warn("UserContext: Telegram WebApp SDK ready, but initData is null. The app might not have been launched with user context.");
-        // Attempt to fetch user data just in case a session already exists from a previous run (less likely for first-time auth)
-        fetchUserData(true).then(existingUser => {
-            if (!existingUser) {
-                setTelegramAuthError('Telegram initData is missing. Please ensure the app is launched correctly with user context (e.g., via a bot button).');
+    } else if (!webApp && !initData) {
+        // Neither webApp nor initData is available. This suggests the SDK is not initializing or not in a Telegram env.
+        // This state might be transient as SDKProvider initializes.
+        // If it persists, it's a problem.
+        // No immediate error set here; let it retry or wait if SDKProvider eventually provides them.
+        // If after a short period, they are still null, it's an issue.
+        // Consider adding a timeout or a check if it's been too long without SDK data.
+        console.warn("UserContext: webApp or initData from @telegram-apps/sdk-react not yet available. Waiting for SDKProvider.");
+        // A timeout to set error if still not available after a delay
+        const timer = setTimeout(() => {
+            if (!webApp && !initData && loadingUser) { // Check loadingUser to avoid setting error if resolved
+                setTelegramAuthError('Telegram SDK could not initialize. Please launch the app from within Telegram.');
+                setLoadingUser(false);
             }
-        }).catch(e => {
-            setTelegramAuthError('Error during fallback session fetch. Relaunch from Telegram.');
-        }).finally(() => {
-            setLoadingUser(false); // Ensure loading is false if initData isn't coming
-        });
-    } else if (!webApp) {
-        // This case means the useWebApp() hook returned null, indicating SDK is not available.
-        // SDKProvider should ideally handle this, but if context runs before provider, this could occur.
-        // Or if it's truly not a Telegram environment.
-        setTelegramAuthError('Telegram WebApp SDK not available. Please launch the app from within Telegram.');
-        setCurrentUser(null);
-        setLoadingUser(false);
+        }, 3000); // 3-second timeout for SDK to initialize
+        return () => clearTimeout(timer);
     }
-    // setLoadingUser(false) is handled within fetchUserData or error catches
-  }, [webApp, initData, fetchUserData]);
+    // Note: setLoadingUser(false) is primarily handled within fetchUserData or the error catches.
+    // If initData or webApp are null, the effect might re-run when they become available.
+  }, [webApp, initData, fetchUserData, loadingUser]); // Added loadingUser to dependencies
 
 
   const updateUserSession = useCallback((updatedUserData: Partial<AppUser>) => {
     setCurrentUser(prevUser => {
       if (!prevUser) {
-        // This case should be rare if login flow is robust.
-        // Potentially, the app could be trying to update before currentUser is set after login.
         console.warn("updateUserSession called when currentUser is null. Update ignored. Data:", updatedUserData);
         return null; 
       }
@@ -207,3 +202,4 @@ export function useUser() {
   }
   return context;
 }
+
