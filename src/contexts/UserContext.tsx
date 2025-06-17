@@ -20,84 +20,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
-  const [isTelegramLoginProcessed, setIsTelegramLoginProcessed] = useState(false);
-
-  const processTelegramLogin = useCallback(async () => {
-    setLoadingUser(true);
-    setTelegramAuthError(null);
-
-    if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
-      const initData = window.Telegram.WebApp.initData;
-      if (initData) {
-        try {
-          const params = new URLSearchParams(initData);
-          const userParam = params.get('user');
-          const startParam = params.get('start_param'); // For referral
-          
-          if (!userParam) {
-            throw new Error("Telegram user data not found in initData.");
-          }
-
-          const tgUserData = JSON.parse(decodeURIComponent(userParam));
-          const referrerTelegramId = startParam || null;
-
-          const loginPayload = {
-            telegramId: tgUserData.id.toString(),
-            firstName: tgUserData.first_name,
-            lastName: tgUserData.last_name || null,
-            username: tgUserData.username || null,
-            referrerTelegramId: referrerTelegramId,
-          };
-
-          const loginResponse = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(loginPayload),
-          });
-
-          if (!loginResponse.ok) {
-            const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed" }));
-            throw new Error(errorData.error || `Login failed with status: ${loginResponse.status}`);
-          }
-          
-          // Login successful, server has set the cookie. Now fetch the full user profile.
-          // The /api/login endpoint itself returns the user, but for consistency and to test /api/auth/me
-          // we can call fetchUserData here. Or, we could directly use loginResponse.json().user
-          // For now, let's ensure fetchUserData is called after successful login.
-          // setIsTelegramLoginProcessed(true); // Signal that login API call is done.
-
-          // Directly fetch user data now that cookie should be set
-          await fetchUserData(true); // Pass true to indicate this is part of initial auth
-
-        } catch (error: any) {
-          console.error('Telegram login processing error:', error);
-          setTelegramAuthError(error.message || 'Failed to process Telegram login.');
-          setCurrentUser(null);
-          setLoadingUser(false);
-        }
-      } else {
-        setTelegramAuthError('Telegram initData is missing. App must be launched from Telegram.');
-        setCurrentUser(null);
-        setLoadingUser(false);
-      }
-    } else {
-      // Not in Telegram environment or Telegram WebApp SDK not ready
-      // Try a slight delay for SDK readiness on initial load
-      await new Promise(resolve => setTimeout(resolve, 500));
-      if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
-        processTelegramLogin(); // Retry
-      } else {
-        setTelegramAuthError('Not running in a Telegram Web App environment.');
-        setCurrentUser(null);
-        setLoadingUser(false);
-      }
-    }
-    setIsTelegramLoginProcessed(true); // Mark as processed regardless of outcome for dependency
-  }, []);
-
 
   const fetchUserData = useCallback(async (isInitialAuth = false): Promise<AppUser | null> => {
-    if (!isInitialAuth) setLoadingUser(true); // Only set loading if not part of initial auth sequence controlled by processTelegramLogin
+    if (!isInitialAuth) setLoadingUser(true);
     
     try {
       const response = await fetch('/api/auth/me'); 
@@ -134,42 +59,121 @@ export function UserProvider({ children }: { children: ReactNode }) {
           };
           setCurrentUser(validatedUser);
           setLoadingUser(false);
+          setTelegramAuthError(null); // Clear any previous auth error on success
           return validatedUser;
         } else {
           setCurrentUser(null);
           if (data.error === 'User not found. Please login again.') {
              setTelegramAuthError('Session expired or user not found. Please relaunch from Telegram.');
+          } else if (isInitialAuth) { 
+            setTelegramAuthError(data.error || 'Failed to authenticate user via /api/auth/me.');
           }
         }
       } else {
         console.warn('UserContext: Failed to fetch user data from /api/auth/me, status:', response.status);
+        if (isInitialAuth) {
+            setTelegramAuthError(`Failed to fetch user data (status: ${response.status}). Please try relaunching.`);
+        }
         setCurrentUser(null);
       }
     } catch (error) {
       console.error('UserContext: Exception during fetch user data:', error);
+      if (isInitialAuth) {
+        setTelegramAuthError('Network error while fetching user data. Please check your connection.');
+      }
       setCurrentUser(null);
     }
-    setLoadingUser(false);
+    // Ensure loading is false if user remains null after attempts
+    if (!currentUser && isInitialAuth) { 
+        setLoadingUser(false);
+    } else if (!isInitialAuth && !currentUser) {
+        setLoadingUser(false);
+    }
     return null;
-  }, []);
+  }, [currentUser]); // currentUser in dep array to help manage loadingUser state if fetchUserData is called when currentUser is already set.
+
+  const initializeTelegramSession = useCallback(async () => {
+    setLoadingUser(true);
+    setTelegramAuthError(null);
+
+    if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
+      try {
+        // The ready() method should be called to ensure the app is fully initialized.
+        // It doesn't take a callback in the latest versions, its completion implies readiness for subsequent sync calls.
+        window.Telegram.WebApp.ready();
+
+        const initDataString = window.Telegram.WebApp.initData;
+        if (initDataString) {
+          const params = new URLSearchParams(initDataString);
+          const userParam = params.get('user');
+          const startParam = params.get('start_param');
+          
+          if (!userParam) {
+            throw new Error("Telegram user data (userParam) not found in initData. Please relaunch from Telegram.");
+          }
+
+          const tgUserData = JSON.parse(decodeURIComponent(userParam));
+          const referrerTelegramId = startParam || null;
+
+          const loginPayload = {
+            telegramId: tgUserData.id.toString(),
+            firstName: tgUserData.first_name,
+            lastName: tgUserData.last_name || null,
+            username: tgUserData.username || null,
+            referrerTelegramId: referrerTelegramId,
+          };
+
+          const loginResponse = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginPayload),
+          });
+
+          if (!loginResponse.ok) {
+            const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed to parse response" }));
+            throw new Error(errorData.error || `Login to backend failed (status: ${loginResponse.status}). Please try relaunching.`);
+          }
+          
+          await fetchUserData(true); 
+
+        } else {
+          console.warn("Telegram WebApp is ready, but initData is empty. Attempting to fetch user data with existing session (if any).");
+          const existingUser = await fetchUserData(true);
+          if (!existingUser) {
+             // This means no existing session AND no initData to create one.
+             setTelegramAuthError('Telegram user data is missing. Please ensure you launch the app correctly through the bot.');
+             setLoadingUser(false); // Explicitly set loading to false here
+          }
+        }
+      } catch (error: any) {
+        console.error('Telegram login processing error:', error);
+        setTelegramAuthError(error.message || 'Failed to process Telegram login. Please relaunch from Telegram.');
+        setCurrentUser(null);
+        setLoadingUser(false);
+      }
+    } else {
+      // Fallback for environments where Telegram SDK might load with a slight delay
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
+            initializeTelegramSession(); // Retry initialization
+        } else {
+            setTelegramAuthError('Not running in a Telegram Web App environment. Please launch the app from Telegram.');
+            setCurrentUser(null);
+            setLoadingUser(false);
+        }
+      }, 700); // Increased delay slightly
+    }
+  }, [fetchUserData]);
 
   useEffect(() => {
-    // This effect now initiates the Telegram login process.
-    // fetchUserData will be called by processTelegramLogin upon successful /api/login.
-    processTelegramLogin();
-  }, [processTelegramLogin]);
+    initializeTelegramSession();
+  }, [initializeTelegramSession]);
 
   const updateUserSession = useCallback((updatedUserData: Partial<AppUser>) => {
     setCurrentUser(prevUser => {
       if (!prevUser) {
-         // If no previous user, and we have an ID, perhaps it's a fresh load after login
-         if (updatedUserData.id) {
-            // This is risky, ideally, full user object comes from fetchUserData
-            // For now, let's just log and return null if prevUser is null.
-            console.warn("updateUserSession called when prevUser is null. Data:", updatedUserData);
-            return null;
-         }
-         return null;
+        console.warn("updateUserSession called when prevUser is null. Data:", updatedUserData);
+        return null; 
       }
       const newUser = { ...prevUser };
       for (const key in updatedUserData) {
@@ -211,3 +215,4 @@ export function useUser() {
   }
   return context;
 }
+
