@@ -4,7 +4,38 @@
 import type { AppUser } from '@/app/types';
 import type { ReactNode } from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+// في بداية الملف ← أضف هذه الدالة للتحقق من توقيع البيانات
+function validateTelegramData(initDataString: string, botToken: string): { isValid: boolean; userData?: any; startParam?: string | null } {
+  const params = new URLSearchParams(initDataString);
+  const hash = params.get('hash');
+  if (!hash) return { isValid: false };
 
+  const dataToCheck: string[] = [];
+  params.forEach((value, key) => {
+    if (key !== 'hash') {
+      dataToCheck.push(`${key}=${value}`);
+    }
+  });
+  dataToCheck.sort(); // الترتيب الأبجدي ضروري لصحة التحقق
+
+  const dataCheckString = dataToCheck.join('\n'); // استخدام \n وليس &
+  const secretKey = crypto.createHmac('sha256', botToken).digest();
+  const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+  if (calculatedHash === hash) {
+    const userParam = params.get('user');
+    const startParam = params.get('start_param');
+    try {
+      const userData = userParam ? JSON.parse(decodeURIComponent(userParam)) : null;
+      return { isValid: true, userData, startParam };
+    } catch (e) {
+      console.error("Error parsing user data:", e);
+      return { isValid: false };
+    }
+  }
+
+  return { isValid: false };
+}
 declare global {
   interface Window {
     Telegram: {
@@ -126,49 +157,65 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setLoadingUser(true);
     setTelegramAuthError(null);
 
-    const attemptInitialization = async () => {
-        if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
-            try {
-                window.Telegram.WebApp.ready(); // Inform Telegram client the app is ready
-                window.Telegram.WebApp.expand(); // Expand the Web App to full height
+   const attemptInitialization = async () => {
+  if (typeof window === 'undefined' || !window.Telegram?.WebApp) {
+    setTelegramAuthError('Not running in a Telegram Web App environment.');
+    setLoadingUser(false);
+    return;
+  }
 
-                const initDataString = window.Telegram.WebApp.initData;
-                
-                if (initDataString) {
-                    const loginResponse = await fetch('/api/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ initDataString }), // Send the whole string
-                    });
+  window.Telegram.WebApp.ready();
 
-                    if (!loginResponse.ok) {
-                        const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed to parse response" }));
-                        throw new Error(errorData.error || `Login to backend failed (status: ${loginResponse.status}). Please ensure the app is launched from Telegram.`);
-                    }
-                    
-                    // Backend has set the cookie if login was successful. Now fetch user data.
-                    await fetchUserData(true); 
-                } else {
-                    // WebApp is ready, but no initData. This implies the user might have an existing session.
-                    console.warn("UserContext: Telegram WebApp is ready, but initData is empty. Attempting to fetch user with existing session.");
-                    const existingUser = await fetchUserData(true);
-                    if (!existingUser) {
-                        setTelegramAuthError('Telegram initData is missing. Please ensure you launch the app through the bot.');
-                    }
-                }
-            } catch (error: any) {
-                console.error('UserContext: Telegram login processing error:', error);
-                setTelegramAuthError(error.message || 'Failed to process Telegram login. Please relaunch from Telegram.');
-                setCurrentUser(null);
-                setLoadingUser(false);
-            }
-        } else {
-            setTelegramAuthError('Not running in a Telegram Web App environment. Please launch the app from Telegram.');
-            setCurrentUser(null);
-            setLoadingUser(false);
-        }
-    };
+  const initDataString = window.Telegram.WebApp.initData;
 
+  if (!initDataString) {
+    setTelegramAuthError('Missing Telegram initDataString. Please relaunch from Telegram.');
+    setLoadingUser(false);
+    return;
+  }
+
+  // Step 1: التحقق من صحة البيانات ← لا يمكن التلاعب
+  const { isValid, userData, startParam } = validateTelegramData(initDataString, process.env.TELEGRAM_BOT_TOKEN!);
+
+  if (!isValid) {
+    setTelegramAuthError('Invalid Telegram authentication signature.');
+    setLoadingUser(false);
+    return;
+  }
+
+  // Step 2: إرسال البيانات إلى الخادم ← لا يمكن التلاعب
+  const telegramId = userData.id.toString();
+
+  const loginPayload = {
+    telegramId,
+    firstName: userData.first_name,
+    lastName: userData.last_name || null,
+    username: userData.username || null,
+    referrerTelegramId: startParam || null,
+  };
+
+  const loginResponse = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(loginPayload),
+  });
+
+  if (!loginResponse.ok) {
+    const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed to parse response" }));
+    throw new Error(errorData.error || `Login to backend failed (status: ${loginResponse.status}). Please try relaunching.`);
+  }
+
+  const data = await loginResponse.json();
+
+  if (data.success && data.user) {
+    setCurrentUser(data.user);
+    setTelegramAuthError(null);
+    setLoadingUser(false);
+  } else {
+    setTelegramAuthError(data.error || 'Failed to authenticate with Telegram.');
+    setLoadingUser(false);
+  }
+};
     // Wait a brief moment for the Telegram SDK to potentially inject itself
     // This is a common pattern for Web Apps.
     if (typeof window !== 'undefined' && (!window.Telegram || !window.Telegram.WebApp)) {
