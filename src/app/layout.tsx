@@ -2,7 +2,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import { UserProvider } from '@/contexts/UserContext'; // Import UserProvider
+import { UserProvider } from '@/contexts/UserContext';
+import { SDKProvider } from '@telegram-apps/sdk-react';
 
 export const metadata: Metadata = {
   title: 'HustleSoul Airdrop Bot',
@@ -23,10 +24,12 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased">
-        <UserProvider> {/* Wrap children with UserProvider */}
-          {children}
-          <Toaster />
-        </UserProvider>
+        <SDKProvider acceptCustomStyles debug>
+          <UserProvider>
+            {children}
+            <Toaster />
+          </UserProvider>
+        </SDKProvider>
       </body>
     </html>
   );
