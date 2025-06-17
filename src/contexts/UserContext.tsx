@@ -1,32 +1,36 @@
-
 'use client';
 
+import React from 'react';
 import type { AppUser } from '@/app/types';
 import type { ReactNode } from 'react';
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useWebApp, useInitData } from '@telegram-apps/sdk-react';
+import { useMiniApp, useInitData } from '@telegram-apps/sdk-react';
 
 interface UserContextType {
   currentUser: AppUser | null;
   setCurrentUser: (user: AppUser | null) => void;
   updateUserSession: (updatedUserData: Partial<AppUser>) => void;
   loadingUser: boolean;
-  fetchUserData: (isInitialAuthAttempt?: boolean) => Promise<AppUser | null>;
+  fetchUserData: (isInitialAuth?: boolean) => Promise<AppUser | null>;
   telegramAuthError: string | null;
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined);
+const UserContext = React.createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = React.useState<AppUser | null>(null);
+  const [loadingUserInternal, setLoadingUserInternal] = React.useState(true);
+  const [telegramAuthError, setTelegramAuthError] = React.useState<string | null>(null);
+  const [isMounted, setIsMounted] = React.useState(false);
 
-  const webApp = useWebApp(); // Hook from @telegram-apps/sdk-react
-  const initData = useInitData(); // Hook from @telegram-apps/sdk-react
+  const miniApp = useMiniApp(); // Called unconditionally as per React hook rules
+  const initDataUtils = useInitData(); // Called unconditionally
 
-  const fetchUserData = useCallback(async (isInitialAuthAttempt = false): Promise<AppUser | null> => {
-    if (!isInitialAuthAttempt) setLoadingUser(true);
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const fetchUserData = React.useCallback(async (isInitialAuth = false): Promise<AppUser | null> => {
+    if (isInitialAuth || !currentUser) setLoadingUserInternal(true);
     
     try {
       const response = await fetch('/api/auth/me'); 
@@ -62,109 +66,115 @@ export function UserProvider({ children }: { children: ReactNode }) {
             last_heart_replenished: data.user.last_heart_replenished || null,
           };
           setCurrentUser(validatedUser);
-          setTelegramAuthError(null); // Clear auth error on successful fetch
+          setTelegramAuthError(null); 
           return validatedUser;
         } else {
           setCurrentUser(null);
-          if (isInitialAuthAttempt && data.error) {
-            setTelegramAuthError(data.error === 'User not found. Please login again.' ? 'Session invalid or user not found. Please relaunch.' : data.error);
+          if (data.error === 'User not found. Please login again.') {
+             setTelegramAuthError('Session invalid or user not found. Please relaunch.');
+          } else if (isInitialAuth) { 
+            setTelegramAuthError(data.error || 'Failed to authenticate user via /api/auth/me.');
           }
         }
       } else {
         console.warn('UserContext: Failed to fetch user data from /api/auth/me, status:', response.status);
-        if (isInitialAuthAttempt) {
+        if (isInitialAuth) {
             setTelegramAuthError(`Failed to fetch user data (status: ${response.status}). Relaunch might be needed.`);
         }
         setCurrentUser(null);
       }
     } catch (error) {
       console.error('UserContext: Exception during fetch user data:', error);
-      if (isInitialAuthAttempt) {
+      if (isInitialAuth) {
         setTelegramAuthError('Network error while fetching user data. Check connection.');
       }
       setCurrentUser(null);
     } finally {
-        // Ensure loading is set to false after any fetch attempt, especially initial ones
-        // Only set loading false if it was an initial attempt or if user is still null.
-        // This prevents flickering if fetchUserData is called for a refresh.
-        if (isInitialAuthAttempt || !currentUser) {
-            setLoadingUser(false);
+        // setLoadingUserInternal should be set to false only after all auth/fetch attempts
+        if (isInitialAuth || !currentUser ) {
+            setLoadingUserInternal(false);
         }
     }
     return null;
-  }, [currentUser]); // Added currentUser to dep array to re-evaluate loadingUser correctly
+  }, [currentUser]);
 
 
-  useEffect(() => {
-    // This effect handles the initial Telegram authentication flow
-    // It depends on `initData` from the @telegram-apps/sdk-react hook
-    // and the `webApp` object for SDK interactions.
-    setLoadingUser(true);
+  const initializeTelegramSession = React.useCallback(async (initDataString?: string) => {
+    setLoadingUserInternal(true);
     setTelegramAuthError(null);
 
-    if (webApp && initData) { // initData is InitData from the SDK
-      webApp.ready(); // Signal to Telegram client that the app is ready
-      webApp.expand(); // Expand the Web App to full screen
-
-      const initDataString = webApp.initData; // The raw initData string
-
-      if (initDataString) {
-        // We have the raw initData string, proceed to login with backend
-        fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ initDataString }), 
-        })
-        .then(async (loginResponse) => {
-          if (!loginResponse.ok) {
-            const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed with unparseable response" }));
-            throw new Error(errorData.error || `Login to backend failed (status: ${loginResponse.status}). Please try relaunching.`);
-          }
-          // Login to backend was successful (cookie should be set by server)
-          // Now fetch the full user profile using the established session
-          return fetchUserData(true); // true indicates this is part of the initial auth sequence
-        })
-        .catch((error: any) => {
-          console.error('Telegram login processing error:', error);
-          setTelegramAuthError(error.message || 'Failed to process Telegram login. Please relaunch from Telegram.');
-          setCurrentUser(null);
-          setLoadingUser(false);
-        });
-      } else {
-        // This case implies the `initData` object from the hook exists, but the raw string `webApp.initData` is empty.
-        // This is unusual if the hook provides `initData`.
-        console.warn("UserContext: SDK's initData object is available, but raw webApp.initData string is empty. This is unexpected. Attempting to fetch user data with existing session.");
-        fetchUserData(true).catch(e => {
-            setTelegramAuthError('initData string was empty, and fallback session fetch failed. Relaunch from Telegram.');
-            setCurrentUser(null);
-            setLoadingUser(false);
-        });
-      }
-    } else if (!webApp && !initData) {
-        // Neither webApp nor initData is available. This suggests the SDK is not initializing or not in a Telegram env.
-        // This state might be transient as SDKProvider initializes.
-        // If it persists, it's a problem.
-        // No immediate error set here; let it retry or wait if SDKProvider eventually provides them.
-        // If after a short period, they are still null, it's an issue.
-        // Consider adding a timeout or a check if it's been too long without SDK data.
-        console.warn("UserContext: webApp or initData from @telegram-apps/sdk-react not yet available. Waiting for SDKProvider.");
-        // A timeout to set error if still not available after a delay
-        const timer = setTimeout(() => {
-            if (!webApp && !initData && loadingUser) { // Check loadingUser to avoid setting error if resolved
-                setTelegramAuthError('Telegram SDK could not initialize. Please launch the app from within Telegram.');
-                setLoadingUser(false);
-            }
-        }, 3000); // 3-second timeout for SDK to initialize
-        return () => clearTimeout(timer);
+    if (!initDataString) {
+      setTelegramAuthError(
+        'Telegram initData not found. Please ensure the app is launched correctly from Telegram.'
+      );
+      setCurrentUser(null);
+      setLoadingUserInternal(false);
+      return;
     }
-    // Note: setLoadingUser(false) is primarily handled within fetchUserData or the error catches.
-    // If initData or webApp are null, the effect might re-run when they become available.
-  }, [webApp, initData, fetchUserData, loadingUser]); // Added loadingUser to dependencies
 
+    try {
+      // initDataString is now guaranteed to be present here by the calling useEffect
+      // miniApp might still be null/undefined if useMiniApp() had issues, but initDataString is key for login.
+      if (miniApp) {
+        miniApp.ready(); // Signal readiness to Telegram client
+        miniApp.expand(); // Expand the Web App
+      } else {
+        console.warn("UserContext: miniApp instance not available from useMiniApp() at time of initializeTelegramSession, but proceeding with initDataString for login.");
+      }
 
-  const updateUserSession = useCallback((updatedUserData: Partial<AppUser>) => {
+      const loginResponse = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initDataString: initDataString }),
+      });
+
+      if (!loginResponse.ok) {
+        const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed, unparseable response" }));
+        throw new Error(errorData.error || `Login to backend failed (status: ${loginResponse.status}). Please try relaunching.`);
+      }
+      
+      await fetchUserData(true); // Fetch full user profile after successful login
+    } catch (error: any) {
+      console.error('UserContext: Telegram login processing error:', error);
+      setTelegramAuthError(error.message || 'Failed to process Telegram login. Relaunch from Telegram.');
+      setCurrentUser(null);
+    } finally {
+      setLoadingUserInternal(false);
+    }
+  }, [miniApp, fetchUserData]); // Dependencies for initializeTelegramSession
+
+  React.useEffect(() => {
+    if (isMounted) {
+      // initDataUtils can be null initially if SDK is still loading
+      const rawInitData = initDataUtils?.initDataRaw;
+      if (rawInitData) {
+        initializeTelegramSession(rawInitData);
+      } else {
+        // This block will run if useInitData() returns null/undefined for initDataRaw after mount.
+        // It might be too early, or initData is genuinely missing.
+        // We set a timeout to give the SDK a bit more time to populate initDataUtils.
+        const timer = setTimeout(() => {
+            const currentRawInitData = initDataUtils?.initDataRaw; // Re-check
+            if (currentRawInitData) {
+                initializeTelegramSession(currentRawInitData);
+            } else if (!loadingUserInternal) { // Only set error if not already processing from a successful earlier fetch
+                setTelegramAuthError(
+                    'Failed to retrieve Telegram InitData after a delay. Please relaunch from Telegram.'
+                );
+                setCurrentUser(null);
+                setLoadingUserInternal(false);
+            }
+        }, 750); // Increased delay to 750ms
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isMounted, initDataUtils, initializeTelegramSession, loadingUserInternal]); // Add loadingUserInternal to prevent setting error if already loading
+
+  const updateUserSession = React.useCallback((updatedUserData: Partial<AppUser>) => {
     setCurrentUser(prevUser => {
       if (!prevUser) {
+        // This case should ideally not happen if login flow is robust.
+        // If it does, it might indicate an issue where an update is attempted before user is set.
         console.warn("updateUserSession called when currentUser is null. Update ignored. Data:", updatedUserData);
         return null; 
       }
@@ -187,19 +197,30 @@ export function UserProvider({ children }: { children: ReactNode }) {
       return newUser;
     });
   }, []);
+  
+  // loadingUser is true if not mounted OR if internal loading (e.g., API calls) is happening.
+  const loadingUser = !isMounted || loadingUserInternal;
+
+  const providerValue = React.useMemo(() => ({
+    currentUser,
+    setCurrentUser,
+    updateUserSession,
+    loadingUser,
+    fetchUserData,
+    telegramAuthError
+  }), [currentUser, updateUserSession, loadingUser, fetchUserData, telegramAuthError]);
 
   return (
-    <UserContext.Provider value={{ currentUser, setCurrentUser, updateUserSession, loadingUser, fetchUserData, telegramAuthError }}>
+    <UserContext.Provider value={providerValue}>
       {children}
     </UserContext.Provider>
   );
 }
 
 export function useUser() {
-  const context = useContext(UserContext);
+  const context = React.useContext(UserContext);
   if (context === undefined) {
     throw new Error('useUser must be used within a UserProvider');
   }
   return context;
 }
-
