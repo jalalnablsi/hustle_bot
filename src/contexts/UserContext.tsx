@@ -1,9 +1,9 @@
+
 'use client';
 
 import React from 'react';
 import type { AppUser } from '@/app/types';
 import type { ReactNode } from 'react';
-// Import retrieveLaunchParams from the base SDK, and useMiniApp from the React SDK for other functionalities
 import { retrieveLaunchParams } from '@telegram-apps/sdk';
 import { useMiniApp } from '@telegram-apps/sdk-react';
 
@@ -23,28 +23,132 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loadingUserInternal, setLoadingUserInternal] = React.useState(true);
   const [telegramAuthError, setTelegramAuthError] = React.useState<string | null>(null);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [initDataRawState, setInitDataRawState] = React.useState<string | undefined>(undefined);
 
-  // useMiniApp for SDK functionalities like ready() and expand()
   const miniApp = useMiniApp();
 
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
 
+  React.useEffect(() => {
+    if (isMounted) {
+      // console.log("UserContext: Component mounted. Attempting to retrieve launch params.");
+      try {
+        const launchParams = retrieveLaunchParams();
+        // console.log("UserContext: retrieveLaunchParams result:", launchParams);
+        if (launchParams.initDataRaw) {
+          // console.log("UserContext: initDataRaw found:", launchParams.initDataRaw.substring(0, 50) + "...");
+          setInitDataRawState(launchParams.initDataRaw);
+        } else {
+          // console.error("UserContext: initDataRaw is NOT available from retrieveLaunchParams.");
+          setTelegramAuthError(
+            'Telegram launch parameters (initData) were not found. Please ensure the app is launched correctly through Telegram.'
+          );
+          setCurrentUser(null);
+          setLoadingUserInternal(false); // Critical: stop loading if initData is definitely missing
+        }
+      } catch (e: any) {
+        // console.error("UserContext: Error in retrieveLaunchParams:", e);
+        setTelegramAuthError(
+          `Error retrieving launch parameters: ${e.message}. Relaunch from Telegram.`
+        );
+        setCurrentUser(null);
+        setLoadingUserInternal(false); // Critical: stop loading on error
+      }
+    }
+  }, [isMounted]);
+
+
+  const initializeTelegramSession = React.useCallback(async (retrievedInitDataRaw: string) => {
+    setTelegramAuthError(null);
+    // setLoadingUserInternal(true) is already true or handled by the caller useEffect
+    
+    try {
+      if (miniApp && typeof miniApp.ready === 'function') {
+        miniApp.ready();
+        // console.log("UserContext: miniApp.ready() called.");
+      } else {
+        // console.warn("UserContext: miniApp or miniApp.ready not available at init. This might be okay if using only initDataRaw.");
+      }
+      if (miniApp && typeof miniApp.expand === 'function') {
+         miniApp.expand();
+        //  console.log("UserContext: miniApp.expand() called.");
+      }
+
+
+      // console.log("UserContext: Calling /api/login with initDataRaw:", retrievedInitDataRaw.substring(0,50) + "...");
+      const loginResponse = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initDataString: retrievedInitDataRaw }),
+      });
+
+      const loginData = await loginResponse.json();
+      // console.log("UserContext: /api/login response:", loginData);
+
+      if (!loginResponse.ok || !loginData.success) {
+        throw new Error(loginData.error || `Login failed (status: ${loginResponse.status}). Please relaunch.`);
+      }
+      
+      // Login successful, now fetch user data.
+      // fetchUserData will set currentUser and clear errors on success.
+      const user = await fetchUserData(true); // true indicates this is part of the initial auth sequence
+      if (!user) {
+        // If fetchUserData returned null, it should have set an error.
+        // If not, set a generic one. This might be redundant.
+        if (!telegramAuthError) {
+          setTelegramAuthError("Failed to retrieve user details after login. Please relaunch.");
+        }
+      } else {
+        // console.log("UserContext: User successfully fetched after login:", user.id);
+      }
+
+    } catch (error: any) {
+      // console.error('UserContext: Error during initializeTelegramSession:', error);
+      setTelegramAuthError(error.message || 'An unexpected error occurred during session initialization. Please relaunch from Telegram.');
+      setCurrentUser(null);
+    } finally {
+      // console.log("UserContext: initializeTelegramSession finally block. Setting loadingUserInternal to false.");
+      setLoadingUserInternal(false); // CRITICAL: Ensure loading stops.
+    }
+  }, [miniApp, telegramAuthError]); // Removed fetchUserData from here, it's called internally
+
+
+  React.useEffect(() => {
+    if (isMounted && initDataRawState) {
+      // console.log("UserContext: isMounted and initDataRawState are set. Scheduling initializeTelegramSession.");
+      // Short delay to allow Telegram environment to fully settle.
+      const timerId = setTimeout(() => {
+        // console.log("UserContext: Timeout finished. Calling initializeTelegramSession.");
+        initializeTelegramSession(initDataRawState);
+      }, 200); // 200ms delay
+
+      return () => clearTimeout(timerId);
+    } else if (isMounted && initDataRawState === undefined && !loadingUserInternal && !telegramAuthError) {
+        // This case means retrieveLaunchParams was tried but initDataRawState is still undefined (not null, not a string)
+        // and we are not already in a loading or error state from retrieveLaunchParams itself.
+        // This might indicate SDK is still initializing.
+        // console.log("UserContext: Mounted, initDataRawState is undefined, not loading, no error yet. Waiting for initDataRaw.");
+    }
+  }, [isMounted, initDataRawState, initializeTelegramSession, loadingUserInternal, telegramAuthError]);
+
+
   const fetchUserData = React.useCallback(async (
     isInitialAuthCall = false
   ): Promise<AppUser | null> => {
     if (!isInitialAuthCall) {
-      // Only manage loading for standalone fetches, not during initial auth sequence
       setLoadingUserInternal(true);
       setTelegramAuthError(null);
     }
     try {
+      // console.log("UserContext: fetchUserData called. isInitialAuthCall:", isInitialAuthCall);
       const response = await fetch('/api/auth/me');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.user) {
-          const validatedUser: AppUser = {
+      const data = await response.json();
+      // console.log("UserContext: /api/auth/me response:", data);
+
+      if (response.ok && data.success && data.user) {
+        const validatedUser: AppUser = {
             ...data.user,
             id: data.user.id?.toString() || `tg-${data.user.telegram_id}`,
             telegram_id: data.user.telegram_id.toString(),
@@ -55,7 +159,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             diamond_points: Number(data.user.diamond_points) || 0,
             purple_gem_points: Number(data.user.purple_gem_points) || 0,
             blue_gem_points: Number(data.user.blue_gem_points) || 0,
-            referral_link: data.user.referral_link || `https://t.me/HustleSoulBot?start=${data.user.telegram_id}`,
+            referral_link: data.user.referral_link || `https://t.me/YOUR_BOT_USERNAME?start=${data.user.telegram_id}`, // Replace YOUR_BOT_USERNAME
             referrals_made: Number(data.user.referrals_made) || 0,
             referral_gold_earned: Number(data.user.referral_gold_earned) || 0,
             referral_diamond_earned: Number(data.user.referral_diamond_earned) || 0,
@@ -65,118 +169,37 @@ export function UserProvider({ children }: { children: ReactNode }) {
             bonus_spins_available: Number(data.user.bonus_spins_available) || 0,
             daily_reward_streak: Number(data.user.daily_reward_streak) || 0,
             last_daily_reward_claim_at: data.user.last_daily_reward_claim_at || null,
-            daily_ad_views_limit: Number(data.user.daily_ad_views_limit) || 50,
+            daily_ad_views_limit: Number(data.user.daily_ad_views_limit) || 50, // Default
             created_at: data.user.created_at || new Date().toISOString(),
             last_login: data.user.last_login || new Date().toISOString(),
             game_hearts: typeof data.user.game_hearts === 'object' && data.user.game_hearts !== null ? data.user.game_hearts : {},
             stake_builder_high_score: Number(data.user.stake_builder_high_score) || 0,
             last_heart_replenished: data.user.last_heart_replenished || null,
           };
-          setCurrentUser(validatedUser);
-          if (!isInitialAuthCall) setTelegramAuthError(null);
-          return validatedUser;
-        } else {
-          setCurrentUser(null);
-          const errorMsg = data.error || 'Failed to authenticate user session via /api/auth/me.';
-          // Only set error if it's part of initial auth or a specific "user not found" type error
-          if (isInitialAuthCall || errorMsg.includes('User not found')) {
-             setTelegramAuthError(errorMsg);
-          }
-        }
+        setCurrentUser(validatedUser);
+        setTelegramAuthError(null); // Clear any previous auth errors on successful fetch
+        return validatedUser;
       } else {
-        const errorMsg = `Failed to fetch user data (status: ${response.status}). Relaunch might be needed.`;
-        if (isInitialAuthCall) setTelegramAuthError(errorMsg); // Set error for initial auth calls
         setCurrentUser(null);
+        const errorMsg = data.error || 'Failed to authenticate user session via /api/auth/me.';
+        setTelegramAuthError(errorMsg);
       }
-    } catch (error) {
-      const errorMsg = 'Network error while fetching user data. Please check your connection.';
-      if (isInitialAuthCall) setTelegramAuthError(errorMsg); // Set error for initial auth calls
+    } catch (error: any) {
+      // console.error("UserContext: Network error in fetchUserData:", error);
+      setTelegramAuthError('Network error while fetching user data. Please check your connection.');
       setCurrentUser(null);
     } finally {
-      // Loading is managed by initializeTelegramSession for initial auth sequence
-      // or by the caller for standalone fetches.
-        if (!isInitialAuthCall) {
-            setLoadingUserInternal(false);
-        }
+      if (!isInitialAuthCall) {
+        // console.log("UserContext: fetchUserData (standalone) finally block. Setting loadingUserInternal to false.");
+        setLoadingUserInternal(false);
+      }
     }
     return null;
-  }, []); // Removed telegramAuthError from dependencies to avoid re-triggering fetch on error
-
-  const initializeTelegramSession = React.useCallback(async (initDataString: string) => {
-    setTelegramAuthError(null); // Clear previous auth errors at the start of a new attempt
-    try {
-      // Signal to Telegram that the Mini App is ready and expand it
-      if (miniApp) {
-        miniApp.ready();
-        miniApp.expand();
-      } else {
-        console.warn("UserContext: miniApp instance (from useMiniApp) not available when attempting to call ready/expand.");
-      }
-
-      const loginResponse = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initDataString }), // Send the raw initData string
-      });
-
-      if (!loginResponse.ok) {
-        const errorData = await loginResponse.json().catch(() => ({ error: "Login API request failed with unparseable response" }));
-        throw new Error(errorData.error || `Login to backend failed (status: ${loginResponse.status}). Please try relaunching.`);
-      }
-      
-      // Login successful, now fetch user data
-      const user = await fetchUserData(true); // true indicates this is part of the initial auth sequence
-      if (!user && !telegramAuthError) { // If fetchUserData returned null but didn't set an error, set a generic one.
-          // This check might be redundant if fetchUserData itself sets telegramAuthError correctly
-          setTelegramAuthError("Failed to retrieve user details after successful login. Please relaunch.");
-      }
-
-    } catch (error: any) {
-      console.error('UserContext: Error during initializeTelegramSession:', error);
-      setTelegramAuthError(error.message || 'An unexpected error occurred during session initialization. Please relaunch from Telegram.');
-      setCurrentUser(null);
-    } finally {
-      // This is the single point where loading finishes for the entire initial session setup sequence
-      setLoadingUserInternal(false);
-    }
-  }, [miniApp, fetchUserData, telegramAuthError]); // Added telegramAuthError here
-
-  React.useEffect(() => {
-    if (!isMounted) {
-      // console.log("UserContext: Not mounted yet.");
-      return; // Wait for client mount
-    }
-
-    // console.log("UserContext Mounted. Attempting to retrieve launch params.");
-    setLoadingUserInternal(true); // Start loading when this effect runs
-    setTelegramAuthError(null);   // Clear previous errors
-
-    // Try to retrieve launch parameters using the base SDK function
-    const launchParams = retrieveLaunchParams();
-    const initDataRaw = launchParams.initDataRaw;
-
-    if (initDataRaw) {
-      // console.log("UserContext: initDataRaw found via retrieveLaunchParams. Scheduling session initialization.");
-      // A small delay can sometimes help ensure the Telegram environment is fully set up.
-      const timerId = setTimeout(() => {
-        initializeTelegramSession(initDataRaw);
-      }, 250); // 250ms delay
-
-      return () => clearTimeout(timerId); // Cleanup timeout if component unmounts or effect re-runs
-    } else {
-      // console.error("UserContext: initDataRaw is NOT available via retrieveLaunchParams.");
-      setTelegramAuthError(
-        'Telegram launch parameters (initData) were not found or are invalid. Please ensure the app is launched correctly through the bot.'
-      );
-      setCurrentUser(null);
-      setLoadingUserInternal(false); // Stop loading as initData is definitively missing
-    }
-  }, [isMounted, initializeTelegramSession]); // initializeTelegramSession is a dependency
+  }, []);
 
   const updateUserSession = React.useCallback((updatedUserData: Partial<AppUser>) => {
     setCurrentUser(prevUser => {
       if (!prevUser) {
-        // console.warn("updateUserSession called when currentUser is null. Update ignored. Data:", updatedUserData);
         return null;
       }
       const newUser = { ...prevUser };
@@ -184,13 +207,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
         if (Object.prototype.hasOwnProperty.call(updatedUserData, key)) {
           const K = key as keyof AppUser;
           const value = updatedUserData[K];
-          // Ensure numeric fields are numbers, boolean for initial_free_spin_used
           if (['gold_points', 'diamond_points', 'purple_gem_points', 'blue_gem_points', 'referrals_made', 'referral_gold_earned', 'referral_diamond_earned', 'ad_spins_used_today_count', 'ad_views_today_count', 'bonus_spins_available', 'daily_reward_streak', 'daily_ad_views_limit', 'stake_builder_high_score'].includes(K)) {
             (newUser[K] as any) = Number(value) || 0;
           } else if (K === 'initial_free_spin_used') {
             (newUser[K] as any) = Boolean(value);
           } else if (K === 'game_hearts') {
-             // Ensure game_hearts is always an object
              (newUser[K] as any) = typeof value === 'object' && value !== null ? value : {};
           } else {
             (newUser[K] as any) = value;
@@ -201,7 +222,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
   }, []);
   
-  // The final loading state depends on whether the component is mounted AND internal loading is true
   const finalLoadingState = !isMounted || loadingUserInternal;
 
   const providerValue = React.useMemo(() => ({
