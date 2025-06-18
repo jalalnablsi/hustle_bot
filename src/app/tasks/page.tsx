@@ -10,7 +10,7 @@ import { Loader2, ListChecks, CheckCircle, AlertTriangle, Info, Coins, Gem } fro
 import { Progress } from '@/components/ui/progress';
 
 export default function TasksPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [errorLoadingTasks, setErrorLoadingTasks] = useState<string | null>(null);
