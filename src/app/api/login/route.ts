@@ -157,11 +157,7 @@ export async function POST(req: NextRequest) {
         daily_reward_streak: 0,
         last_daily_reward_claim_at: null,
         daily_ad_views_limit: 50,
-        game_hearts: { 'stake-builder': { count: 5, nextRegen: null } }, // Default hearts for stake-builder
-        last_heart_replenished: null,
-        // stake_builder_high_score: 0, // REMOVED: This column does not exist on users table
-        payment_wallet_address: null,
-        payment_network: null,
+  
       };
 
       let referrerUserRecord: AppUser | null = null;
