@@ -9,7 +9,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { Button } from '@/components/ui/button'; // Added for potential retry
 
 export default function DashboardPage() {
-  const { currentUser, loadingUser, telegramAuthError, fetchUserData } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
 
   if (loadingUser) { // Primary loading state
     return (
