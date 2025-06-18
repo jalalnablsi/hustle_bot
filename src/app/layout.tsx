@@ -2,10 +2,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-// Removed direct imports of UserProvider and SDKProvider
-// import { UserProvider } from '@/contexts/UserContext';
-// import { SDKProvider } from '@telegram-apps/sdk-react';
-import { AppProviders } from '@/components/providers/AppProviders'; // Import the new wrapper
+import { AppProviders } from '@/components/providers/AppProviders'; 
+import Script from 'next/script'; // Import Script component
 
 export const metadata: Metadata = {
   title: 'HustleSoul Airdrop Bot',
@@ -24,9 +22,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        {/* Adsgram SDK Script - loads asynchronously and non-blockingly */}
+        <Script src="https://sdk.adsgram.ai/js/adsgram.js" strategy="beforeInteractive" />
       </head>
       <body className="font-body antialiased">
-        {/* Use the AppProviders wrapper here */}
         <AppProviders>
           {children}
           <Toaster />
