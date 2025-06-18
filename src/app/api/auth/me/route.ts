@@ -109,6 +109,8 @@ export async function GET(req: NextRequest) {
       daily_ad_views_limit: Number(user.daily_ad_views_limit) || 50,
       created_at: user.created_at || new Date().toISOString(),
       last_login: user.last_login || new Date().toISOString(),
+      game_hearts: typeof user.game_hearts === 'object' && user.game_hearts !== null ? user.game_hearts : {},
+      last_heart_replenished: user.last_heart_replenished || null,
     };
 
     // 6. Remove undefined properties
