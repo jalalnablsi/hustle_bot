@@ -37,7 +37,7 @@ function formatUserRankDisplay(rank: number | undefined | null): string {
 }
 
 export default function LeaderboardPage() {
-  const { currentUser, loadingUser, telegramAuthError } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
   const [leaderboardData, setLeaderboardData] = useState<ApiLeaderboardData | null>(null);
   const [isLoadingApi, setIsLoadingApi] = useState(true); // API specific loading
   const [apiError, setApiError] = useState<string | null>(null);
