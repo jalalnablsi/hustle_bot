@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
          return NextResponse.json({ success: false, error: 'Invalid authentication cookie content (missing ID).' }, { status: 400 });
     }
     
-    const telegramId = tgUserFromCookie.id.toString();
+    const telegramId = tgUserFromCookie.telegram_id.toString();
 
     const { data: user, error } = await supabaseAdmin
       .from('users')
