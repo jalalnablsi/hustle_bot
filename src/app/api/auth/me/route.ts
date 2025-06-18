@@ -74,11 +74,7 @@ export async function GET(req: NextRequest) {
       created_at: user.created_at || new Date().toISOString(),
       last_login: user.last_login || new Date().toISOString(), // Ensure last_login is a string
       game_hearts: typeof user.game_hearts === 'object' && user.game_hearts !== null ? user.game_hearts : {},
-      stake_builder_high_score: Number(user.stake_builder_high_score) || 0,
-      last_heart_replenished: user.last_heart_replenished || null,
-      // Optional payment fields
-      payment_wallet_address: user.payment_wallet_address || null,
-      payment_network: user.payment_network || null,
+  
     };
     
     // Remove any potentially problematic or undefined fields that AppUser might not expect
