@@ -9,7 +9,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { Button } from '@/components/ui/button'; // Added for potential retry
 
 export default function DashboardPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
+  const { currentUser, loadingUser, telegramAuthError, fetchUserData } = useUser();
 
   if (loadingUser) { // Primary loading state
     return (
@@ -22,7 +22,7 @@ export default function DashboardPage() {
     );
   }
   
-  if (!currentUser) { // Specific authentication error
+  if (telegramAuthError && !currentUser) { // Specific authentication error
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
@@ -36,7 +36,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!currentUser && !loadingUser ) { // User definitively not logged in after loading, no specific auth error
+  if (!currentUser && !loadingUser && !telegramAuthError) { // User definitively not logged in after loading, no specific auth error
      return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
