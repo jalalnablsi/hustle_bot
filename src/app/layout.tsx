@@ -23,7 +23,7 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
         {/* Adsgram SDK Script - loads asynchronously and non-blockingly */}
-        <Script src="https://sad.adsgram.ai/js/sad.min.js" strategy="beforeInteractive" />
+        <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
       </head>
       <body className="font-body antialiased">
         <AppProviders>
