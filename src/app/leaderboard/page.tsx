@@ -1,4 +1,3 @@
-
 'use client';
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -7,6 +6,7 @@ import { LeaderboardItem } from "@/components/leaderboard/LeaderboardItem";
 import { Trophy, Coins, Users, Star, Loader2, AlertTriangle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useEffect, useState, useCallback } from "react";
 import type { LeaderboardEntry as GenericLeaderboardEntry } from "@/app/types";
 import { useUser } from "@/contexts/UserContext";
@@ -37,52 +37,60 @@ function formatUserRankDisplay(rank: number | undefined | null): string {
 }
 
 export default function LeaderboardPage() {
-  const { currentUser } = useUser();
+  const { currentUser, loadingUser, telegramAuthError } = useUser();
   const [leaderboardData, setLeaderboardData] = useState<ApiLeaderboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoadingApi, setIsLoadingApi] = useState(true); // API specific loading
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const processEntries = useCallback((entries: any[], pointField: string = 'points'): GenericLeaderboardEntry[] => {
     return (entries || []).map((entry, index) => ({
       ...entry,
       rank: entry.rank || index + 1,
-      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0), // Ensure points is a number
+      points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
       username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
       avatarUrl: `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700/000000' : entry.rank === 2 ? 'C0C0C0/000000' : entry.rank === 3 ? 'CD7F32/000000' : '667EEA/FFFFFF'}.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}&font=roboto`,
       dataAiHint: "avatar person",
     }));
   }, []);
 
-  useEffect(() => {
-    const fetchLeaderboard = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch('/api/leaderboard');
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({ error: "Failed to parse error from server" }));
-          throw new Error(errData.error || `Failed to fetch leaderboard: ${response.status}`);
-        }
-        const apiResult = await response.json();
-        if (apiResult.success && apiResult.data) {
-          setLeaderboardData({
-            top_gold: processEntries(apiResult.data.top_gold, 'points'),
-            top_scores: processEntries(apiResult.data.top_scores, 'points'),
-            top_referrals: processEntries(apiResult.data.top_referrals, 'points'),
-            user_rank: apiResult.data.user_rank || { gold: null, referrals: null, scores: null, scoreValue: null },
-          });
-        } else {
-          throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
-        }
-      } catch (err: any) {
-        setError(err.message);
-        console.error("Error fetching leaderboard:", err);
-      } finally {
-        setIsLoading(false);
+  const fetchLeaderboard = useCallback(async () => {
+    setIsLoadingApi(true);
+    setApiError(null);
+    try {
+      const response = await fetch('/api/leaderboard');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: "Failed to parse error from server" }));
+        throw new Error(errData.error || `Failed to fetch leaderboard: ${response.status}`);
       }
-    };
-    fetchLeaderboard();
+      const apiResult = await response.json();
+      if (apiResult.success && apiResult.data) {
+        setLeaderboardData({
+          top_gold: processEntries(apiResult.data.top_gold, 'points'),
+          top_scores: processEntries(apiResult.data.top_scores, 'points'),
+          top_referrals: processEntries(apiResult.data.top_referrals, 'points'),
+          user_rank: apiResult.data.user_rank || { gold: null, referrals: null, scores: null, scoreValue: null },
+        });
+      } else {
+        throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
+      }
+    } catch (err: any) {
+      setApiError(err.message);
+      console.error("Error fetching leaderboard:", err);
+    } finally {
+      setIsLoadingApi(false);
+    }
   }, [processEntries]);
+
+  useEffect(() => {
+    // Fetch leaderboard only if user context is not loading and user is presumed logged in (or if page doesn't strictly require login for general view)
+    if (!loadingUser && currentUser) { // Ensure currentUser is present before fetching
+        fetchLeaderboard();
+    } else if (!loadingUser && !currentUser && !telegramAuthError) {
+        // If user is definitively not logged in (and no auth error yet), don't fetch.
+        // The UI below will handle this state.
+        setIsLoadingApi(false); // Stop API loading indicator
+    }
+  }, [loadingUser, currentUser, telegramAuthError, fetchLeaderboard]);
 
   const UserRankDisplayCard = ({ category, rank, score }: { category: string; rank: number | null | undefined; score?: number | null | undefined}) => (
     <Card className="bg-primary/10 border-primary/30 shadow-md my-2 sm:my-4 w-full max-w-xs mx-auto">
@@ -104,10 +112,11 @@ export default function LeaderboardPage() {
     userRankValue?: number | null,
     userScoreValue?: number | null
   ) => {
-    if (isLoading) {
+    if (isLoadingApi) {
         return (
           <div className="flex justify-center items-center py-10 sm:py-20">
             <Loader2 className="h-8 w-8 sm:h-10 sm:w-10 animate-spin text-primary" />
+            <p className="ml-3 text-muted-foreground">Loading {title}...</p>
           </div>
         );
     }
@@ -143,15 +152,12 @@ export default function LeaderboardPage() {
 
         {topThree.length > 0 && (
           <div className="grid grid-cols-3 gap-2 xs:gap-3 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0 relative">
-            {/* Rank 2 (Left) */}
             <div className="col-start-1 flex justify-center order-2 sm:order-1">
               {rank2User && <TopThreeItem {...rank2User} currency={pointSuffix} rankNameOverride={rankTitles[2]} />}
             </div>
-            {/* Rank 1 (Center) */}
             <div className="col-start-2 flex justify-center order-1 sm:order-2 relative z-10">
               {rank1User && <TopThreeItem {...rank1User} currency={pointSuffix} rankNameOverride={rankTitles[1]} />}
             </div>
-            {/* Rank 3 (Right) */}
             <div className="col-start-3 flex justify-center order-3 sm:order-3">
               {rank3User && <TopThreeItem {...rank3User} currency={pointSuffix} rankNameOverride={rankTitles[3]} />}
             </div>
@@ -172,6 +178,42 @@ export default function LeaderboardPage() {
     );
   };
 
+  if (loadingUser) {
+    return (
+      <AppShell>
+        <div className="flex justify-center items-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))]">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (telegramAuthError && !currentUser) {
+    return (
+      <AppShell>
+        <div className="container mx-auto px-4 py-8 text-center">
+          <AlertTriangle className="mx-auto h-16 w-16 text-destructive mb-4" />
+          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Authentication Error</h1>
+          <p className="text-muted-foreground mb-6">{telegramAuthError}</p>
+          <Button onClick={() => window.location.reload()} variant="outline">Try Relaunching App</Button>
+        </div>
+      </AppShell>
+    );
+  }
+  
+  if (!currentUser && !loadingUser && !telegramAuthError) {
+     return (
+      <AppShell>
+        <div className="container mx-auto px-4 py-8 text-center">
+          <AlertTriangle className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
+          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Login Required</h1>
+          <p className="text-muted-foreground">You need to be logged in to view the leaderboards. Please launch the app via Telegram.</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+
   return (
     <AppShell>
       <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
@@ -183,19 +225,20 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        {isLoading && !leaderboardData && (
+        {isLoadingApi && !leaderboardData && (
           <div className="flex justify-center items-center py-10 sm:py-20">
             <Loader2 className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-primary" />
           </div>
         )}
-        {error && !isLoading && (
+        {apiError && !isLoadingApi && (
           <div className="text-center py-8 sm:py-10 bg-destructive/10 border border-destructive rounded-lg p-4 sm:p-6">
             <AlertTriangle className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-destructive mb-2 sm:mb-3" />
             <p className="text-destructive-foreground font-semibold text-md sm:text-lg">Failed to load leaderboard data.</p>
-            <p className="text-destructive-foreground/80 text-sm">{error}</p>
+            <p className="text-destructive-foreground/80 text-sm">{apiError}</p>
+            <Button onClick={fetchLeaderboard} variant="outline" className="mt-4">Try Again</Button>
           </div>
         )}
-        {!isLoading && !error && leaderboardData && (
+        {!isLoadingApi && !apiError && leaderboardData && (
           <Tabs defaultValue="gold" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 bg-card shadow-inner">
               <TabsTrigger value="gold" className="text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 data-[state=active]:text-yellow-400 py-1.5 sm:py-2"><Coins className="h-3 w-3 sm:h-4 sm:w-4" />Richest</TabsTrigger>
