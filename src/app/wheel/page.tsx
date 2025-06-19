@@ -17,9 +17,8 @@ import { Coins, Gem, Gift, Loader2, Tv, Users, AlertTriangle, RefreshCw, Play } 
 import type { WheelPrize as BackendPrizeConfig } from '@/types';
 import ReactWheel from '@/components/wheel/ReactWheel';
 import { useUser } from '@/contexts/UserContext';
-import { useAdsgram } from '@/hooks/useAdsgram'; // Import the new hook
+import { useAdsgram } from '@/hooks/useAdsgram'; 
 
-// This should match the configuration in your /api/wheel/spin route
 const BACKEND_WHEEL_PRIZES_CONFIG_FOR_PAGE: Omit<BackendPrizeConfig, 'id' | 'dataAiHint' | 'color' | 'isSpecial' | 'description' | 'probabilityWeight'>[] = [
   { name: '50 Gold', type: 'gold', value: 50 },
   { name: '2 Diamond', type: 'diamonds', value: 2 },
@@ -35,42 +34,43 @@ const ADSGRAM_WHEEL_BLOCK_ID = process.env.NEXT_PUBLIC_ADSGRAM_BLOCK_ID_WHEEL ||
 
 
 export default function WheelPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
 
-  const [isBackendProcessing, setIsBackendProcessing] = useState(false); // For regular spin API
+  const [isBackendProcessing, setIsBackendProcessing] = useState(false); 
   const [isWheelSpinningVisually, setIsWheelSpinningVisually] = useState(false);
   const [targetPrizeIndexForWheel, setTargetPrizeIndexForWheel] = useState<number | null>(null);
   const lastWonPrizeRef = useRef<{ label: string; type: 'gold'|'diamonds'; value?: number; icon: React.ElementType} | null>(null);
   
-  const [isAdInProgress, setIsAdInProgress] = useState(false); // For Adsgram ad state
+  const [isAdInProgress, setIsAdInProgress] = useState(false); 
 
   const { toast } = useToast();
 
-  const handleAdsgramReward = useCallback(() => {
+  const handleAdsgramRewardClientSide = useCallback(() => {
     toast({ title: 'Ad Watched!', description: 'Spin reward is being processed. Refreshing your data...', icon: <Gift className="text-primary" /> });
-    // The actual reward is handled by server-to-server callback.
-    // We can refresh user data here to reflect the new spin count once processed.
-    setTimeout(() => { // Give a small delay for server to process
+    setTimeout(() => { 
         fetchUserData(); 
-    }, 2000); // Adjust delay as needed
+    }, 2500); 
     setIsAdInProgress(false);
   }, [toast, fetchUserData]);
 
-  const handleAdsgramError = useCallback(() => {
-    // Toast is already handled within useAdsgram for common errors like no_ad_available
-    // toast({ title: 'Ad Error', description: result.description || 'Could not show ad.', variant: 'destructive' });
+  const handleAdsgramErrorClientSide = useCallback(() => {
     setIsAdInProgress(false);
   }, []);
   
-  const handleAdsgramClose = useCallback(() => {
+  const handleAdsgramCloseClientSide = useCallback(() => {
+    if (!isAdInProgress) return; // Only act if an ad was indeed in progress
+    // Check if a reward was triggered; if so, onReward handles setIsAdInProgress(false)
+    // This ensures if user closes ad early, we reset the state.
+    // A more robust way might involve a flag set by onReward.
+    // For now, this basic close handling should be okay.
     setIsAdInProgress(false);
-  }, []);
+  }, [isAdInProgress]);
 
   const showAdsgramAdForSpin = useAdsgram({
     blockId: ADSGRAM_WHEEL_BLOCK_ID,
-    onReward: handleAdsgramReward,
-    onError: handleAdsgramError,
-    onClose: handleAdsgramClose,
+    onReward: handleAdsgramRewardClientSide,
+    onError: handleAdsgramErrorClientSide,
+    onClose: handleAdsgramCloseClientSide,
   });
 
   const handleSpinAPI = useCallback(async () => {
@@ -79,9 +79,10 @@ export default function WheelPage() {
     }
 
     const initialFreeSpinIsActuallyAvailable = !currentUser.initial_free_spin_used;
-    const currentSpinsAvailableForAPI = (initialFreeSpinIsActuallyAvailable ? 1 : 0) + (currentUser.bonus_spins_available || 0);
+    const currentBonusSpins = currentUser.bonus_spins_available || 0;
+    const totalSpinsAvailableForAPI = (initialFreeSpinIsActuallyAvailable ? 1 : 0) + currentBonusSpins;
 
-    if (currentSpinsAvailableForAPI <= 0) {
+    if (totalSpinsAvailableForAPI <= 0) {
       toast({ title: 'No Spins Left', description: 'Watch an ad or invite friends to earn more spins!', variant: 'default' });
       return;
     }
@@ -99,18 +100,17 @@ export default function WheelPage() {
       const data = await response.json();
 
       if (response.ok && data.success && typeof data.prizeIndex === 'number') {
-        // Update user session based on API response
          updateUserSession({
             gold_points: data.goldPoints,
             diamond_points: data.diamondPoints,
-            bonus_spins_available: data.initialFreeSpinUsedNow ? data.spinsLeft : Math.max(0, data.spinsLeft), // if initial was used, spinsLeft is new bonus_spins. if not, it's total.
+            bonus_spins_available: data.initialFreeSpinUsedNow && initialFreeSpinIsActuallyAvailable ? currentBonusSpins : Math.max(0, currentBonusSpins - (initialFreeSpinIsActuallyAvailable ? 0 : 1) ),
             initial_free_spin_used: data.initialFreeSpinUsedNow || currentUser.initial_free_spin_used,
         });
         
         setIsWheelSpinningVisually(true);
         setTargetPrizeIndexForWheel(data.prizeIndex);
       } else {
-        await fetchUserData(); // Sync if something was unexpected
+        await fetchUserData(); 
         setIsWheelSpinningVisually(false);
         setIsBackendProcessing(false);
         throw new Error(data.error || 'Failed to spin the wheel. Server did not return a valid prize index.');
@@ -120,7 +120,7 @@ export default function WheelPage() {
       toast({ title: 'Spin Error', description: (error as Error).message || 'Could not complete spin.', variant: 'destructive' });
       setIsBackendProcessing(false);
       setIsWheelSpinningVisually(false);
-      await fetchUserData(); // Sync on error
+      await fetchUserData(); 
     }
   }, [currentUser, contextLoadingUser, isBackendProcessing, isWheelSpinningVisually, isAdInProgress, toast, fetchUserData, updateUserSession]);
 
@@ -139,15 +139,13 @@ export default function WheelPage() {
       ),
       duration: 4000,
     });
-    // User data should have been updated by handleSpinAPI before visual spin starts
   }, [toast]);
 
   const handleWatchAdButtonClick = async () => {
     if (!currentUser || contextLoadingUser || isBackendProcessing || isWheelSpinningVisually || isAdInProgress) return;
 
     const adsWatched = currentUser.ad_spins_used_today_count || 0;
-    // Assuming daily_ad_views_limit on user profile is general, or we use a specific one for wheel spins if available
-    const dailyLimit = currentUser.daily_ad_views_limit || 3; // Default for wheel page ads
+    const dailyLimit = currentUser.daily_ad_views_limit || 3; 
 
     if (adsWatched >= dailyLimit) {
       toast({ title: 'Ad Limit Reached', description: `You've watched the maximum ads for spins today (${adsWatched}/${dailyLimit}).`, variant: 'default' });
@@ -155,10 +153,10 @@ export default function WheelPage() {
     }
     setIsAdInProgress(true);
     await showAdsgramAdForSpin();
-    // isAdInProgress will be set to false by onReward or onError callbacks of useAdsgram
   };
 
-  if (contextLoadingUser && !currentUser) {
+
+  if (contextLoadingUser) {
     return (
       <AppShell>
         <div className="flex items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height,0px))] md:min-h-[calc(100vh-var(--header-height))]">
@@ -168,24 +166,23 @@ export default function WheelPage() {
     );
   }
 
-  if (!currentUser && !contextLoadingUser) {
+  if (telegramAuthError || !currentUser ) {
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height,0px))] md:min-h-[calc(100vh-var(--header-height))] text-center p-4">
           <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
-          <h2 className="text-2xl font-semibold mb-2">User Not Found</h2>
-          <p className="text-muted-foreground mb-4">Could not load your profile. Please try refreshing or ensure you are logged in.</p>
-          <Button onClick={() => fetchUserData()}><RefreshCw className="mr-2 h-4 w-4" /> Try Again</Button>
+          <h2 className="text-2xl font-semibold mb-2">{telegramAuthError ? "Authentication Error" : "User Not Found"}</h2>
+          <p className="text-muted-foreground mb-4">{telegramAuthError || "Could not load your profile. Please try relaunching or ensure you are logged in."}</p>
+          <Button onClick={() => window.location.reload()}><RefreshCw className="mr-2 h-4 w-4" /> Relaunch App</Button>
         </div>
       </AppShell>
     );
   }
 
-  const initialFreeSpinIsAvailableForDisplay = !currentUser.initial_free_spin_used;
-  const spinsAvailableForDisplay = (initialFreeSpinIsAvailableForDisplay ? 1 : 0) + (currentUser.bonus_spins_available || 0);
-  const adsWatchedTodayForSpins = currentUser.ad_spins_used_today_count || 0;
-  // Use a general daily ad limit if specific spin ad limit isn't on user, or a default
-  const dailyAdViewLimitForSpins = currentUser.daily_ad_views_limit || 3; 
+  const initialFreeSpinIsAvailableForDisplay = !currentUser?.initial_free_spin_used;
+  const spinsAvailableForDisplay = (initialFreeSpinIsAvailableForDisplay ? 1 : 0) + (currentUser?.bonus_spins_available || 0);
+  const adsWatchedTodayForSpins = currentUser?.ad_spins_used_today_count || 0;
+  const dailyAdViewLimitForSpins = currentUser?.daily_ad_views_limit || 3; 
 
   return (
     <AppShell>
@@ -196,7 +193,7 @@ export default function WheelPage() {
               <Gift className="h-8 w-8 sm:h-9 sm:w-9" /> Wheel of Fortune
             </CardTitle>
             <CardDescription className="text-muted-foreground mt-1 text-xs sm:text-sm">
-              Spin for Gold & Diamonds! Good luck, {currentUser.first_name || 'Player'}!
+              Spin for Gold & Diamonds! Good luck, {currentUser?.first_name || 'Player'}!
             </CardDescription>
           </CardHeader>
 
@@ -207,7 +204,7 @@ export default function WheelPage() {
               targetPrizeIndex={targetPrizeIndexForWheel}
               isWheelSpinningVisually={isWheelSpinningVisually}
               onSpinAnimationEnd={handleSpinAnimationEnd}
-              onWheelClick={handleSpinAPI} // Spin button is primary, wheel click is secondary
+              onWheelClick={handleSpinAPI} 
             />
 
             <div className="text-center space-y-1 mt-4 w-full">
@@ -225,7 +222,7 @@ export default function WheelPage() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {initialFreeSpinIsAvailableForDisplay ? "Your first spin is FREE!" :
-                 (currentUser.bonus_spins_available || 0) > 0 ? `You have ${currentUser.bonus_spins_available} bonus spin(s).` :
+                 (currentUser?.bonus_spins_available || 0) > 0 ? `You have ${currentUser?.bonus_spins_available} bonus spin(s).` :
                  "No bonus spins currently."}
               </p>
                <p className="text-xs text-muted-foreground">
@@ -242,7 +239,7 @@ export default function WheelPage() {
             >
               {isWheelSpinningVisually ? (
                   <Loader2 className="mr-2 h-5 w-5 sm:h-6 sm:w-6 animate-spin" />
-              ) : isBackendProcessing && !isWheelSpinningVisually ? ( // Only show "Starting..." if it's a regular spin API call
+              ) : isBackendProcessing && !isWheelSpinningVisually ? ( 
                   <Loader2 className="mr-2 h-5 w-5 sm:h-6 sm:w-6 animate-spin" />
               ) : (
                   <Play className="mr-2 h-5 w-5 sm:h-6 sm:w-6" />
@@ -267,7 +264,6 @@ export default function WheelPage() {
             </Link>
           </CardFooter>
         </Card>
-        {/* Adsgram does not require a client-side dialog like the previous ad simulation */}
       </div>
     </AppShell>
   );
