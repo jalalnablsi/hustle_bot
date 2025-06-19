@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
     const tgUserCookie = req.cookies.get('tgUser');
 
     if (!tgUserCookie || !tgUserCookie.value) {
+      console.warn('Auth me - cookie missing:', req.url);
       return NextResponse.json({ success: false, error: 'Authentication cookie not found. Please login.' }, { status: 401 });
     }
 
@@ -15,34 +16,45 @@ export async function GET(req: NextRequest) {
     try {
         tgUserFromCookie = JSON.parse(tgUserCookie.value);
     } catch (e) {
-        console.error('Auth me - cookie parse error:', e);
+        console.error('Auth me - cookie parse error:', e, { cookieValue: tgUserCookie.value.substring(0,100) });
         return NextResponse.json({ success: false, error: 'Invalid authentication cookie format.' }, { status: 400 });
     }
 
+    // The cookie should now contain 'id' (UUID from your DB) and 'telegram_id'
     if (!tgUserFromCookie || !tgUserFromCookie.id || !tgUserFromCookie.telegram_id) {
-         console.warn('Auth me - invalid cookie content:', tgUserFromCookie);
-         return NextResponse.json({ success: false, error: 'Invalid authentication cookie content (missing ID or Telegram ID).' }, { status: 400 });
+         console.warn('Auth me - invalid cookie content (missing id or telegram_id):', tgUserFromCookie);
+         return NextResponse.json({ success: false, error: 'Invalid authentication cookie content.' }, { status: 400 });
     }
     
-    const telegramId = tgUserFromCookie.telegram_id.toString();
+    // Fetch user by primary key 'id' (UUID) from the cookie, which is more reliable
+    const userIdFromCookie = tgUserFromCookie.id.toString();
 
     const { data: user, error } = await supabaseAdmin
       .from('users')
       .select('*')
-      .eq('telegram_id', telegramId)
+      .eq('id', userIdFromCookie) // Use the UUID 'id' from the cookie
       .single();
 
     if (error) {
-      console.error('Auth me - user fetch error:', error.message, error.code, { telegramId });
-      if (error.code === 'PGRST116') { 
-         return NextResponse.json({ success: false, error: 'User not found in database. Please login again.' }, { status: 404 });
+      console.error('Auth me - user fetch error by DB ID:', error.message, error.code, { userIdFromCookie });
+      if (error.code === 'PGRST116') { // No rows found
+         return NextResponse.json({ success: false, error: 'User not found in database (via cookie ID). Please login again.' }, { status: 404 });
       }
       return NextResponse.json({ success: false, error: `Database error fetching user: ${error.message}` }, { status: 500 });
     }
     
     if (!user) { 
-         return NextResponse.json({ success: false, error: 'User not found (post-query check).' }, { status: 404 });
+         // This case should ideally be caught by PGRST116, but as a safeguard
+         return NextResponse.json({ success: false, error: 'User not found (post-query check with cookie ID).' }, { status: 404 });
     }
+
+    // Optional: verify that the telegram_id in the cookie matches the one in the fetched user record for added security
+    if (user.telegram_id.toString() !== tgUserFromCookie.telegram_id.toString()) {
+        console.warn('Auth me - cookie TG ID mismatch with DB record:', { cookieTgId: tgUserFromCookie.telegram_id, dbTgId: user.telegram_id });
+        // Decide on security implication: invalidate session or log warning
+        // For now, proceed if DB ID match was successful, but this is a point for security review
+    }
+
 
     // Update last_login but don't make it a critical failure if it doesn't work
     try {
@@ -54,6 +66,8 @@ export async function GET(req: NextRequest) {
         console.warn('Auth me - failed to update last_login:', updateError);
     }
 
+    // Construct the AppUser object to send to the client
+    // Ensure all fields match the AppUser type definition
     const sanitizedUser: AppUser = {
       id: user.id.toString(),
       telegram_id: user.telegram_id.toString(),
@@ -61,39 +75,31 @@ export async function GET(req: NextRequest) {
       last_name: user.last_name || null,
       username: user.username || null,
       photo_url: user.photo_url || null,
-      gold_points: Number(user.gold_points) || 0,
-      diamond_points: Number(user.diamond_points) || 0,
-      purple_gem_points: Number(user.purple_gem_points) || 0,
-      blue_gem_points: Number(user.blue_gem_points) || 0,
-      referral_link: user.referral_link || `https://t.me/YOUR_BOT_USERNAME?start=${user.telegram_id}`,
-      referrals_made: Number(user.referrals_made) || 0,
-      referral_gold_earned: Number(user.referral_gold_earned) || 0,
-      referral_diamond_earned: Number(user.referral_diamond_earned) || 0,
+      gold_points: Number(user.gold_points || 0),
+      diamond_points: Number(user.diamond_points || 0),
+      purple_gem_points: Number(user.purple_gem_points || 0),
+      blue_gem_points: Number(user.blue_gem_points || 0),
+      referral_link: user.referral_link || `https://t.me/HusleSoulBot/Start?start=${user.telegram_id}`,
+      referrals_made: Number(user.referrals_made || 0),
+      referral_gold_earned: Number(user.referral_gold_earned || 0),
+      referral_diamond_earned: Number(user.referral_diamond_earned || 0),
       initial_free_spin_used: Boolean(user.initial_free_spin_used),
-      ad_spins_used_today_count: Number(user.ad_spins_used_today_count) || 0,
-      ad_views_today_count: Number(user.ad_views_today_count) || 0,
-      bonus_spins_available: Number(user.bonus_spins_available) || 0,
-      daily_reward_streak: Number(user.daily_reward_streak) || 0,
+      ad_spins_used_today_count: Number(user.ad_spins_used_today_count || 0),
+      ad_views_today_count: Number(user.ad_views_today_count || 0),
+      bonus_spins_available: Number(user.bonus_spins_available || 0),
+      daily_reward_streak: Number(user.daily_reward_streak || 0),
       last_daily_reward_claim_at: user.last_daily_reward_claim_at || null,
-      daily_ad_views_limit: Number(user.daily_ad_views_limit) || 50,
-      created_at: user.created_at || new Date().toISOString(),
-      last_login: user.last_login || new Date().toISOString(),
+      daily_ad_views_limit: Number(user.daily_ad_views_limit || 50),
+      created_at: user.created_at || new Date().toISOString(), // Ensure created_at is always present
+      last_login: user.last_login || new Date().toISOString(),   // Ensure last_login is always present
       game_hearts: typeof user.game_hearts === 'object' && user.game_hearts !== null ? user.game_hearts : {},
-      // stake_builder_high_score is not directly on users table, it's fetched separately if needed.
-      // Defaulting it to 0 here if the AppUser type expects it.
-      stake_builder_high_score: Number(user.stake_builder_high_score) || 0, 
+  
       last_heart_replenished: user.last_heart_replenished || null,
+
     };
     
-    Object.keys(sanitizedUser).forEach(key => {
-        const K = key as keyof AppUser;
-        if (sanitizedUser[K] === undefined) {
-            // This logic might be too aggressive if some fields are truly optional and meant to be undefined.
-            // For now, if AppUser type has optional fields, this is fine.
-            // If AppUser type has non-optional fields that could be undefined from DB, they need defaults above.
-            // delete sanitizedUser[K]; 
-        }
-    });
+    // Ensure no undefined values are sent if AppUser type has non-optional fields.
+    // The above construction should handle most defaults.
 
     return NextResponse.json({
         success: true,
