@@ -1,3 +1,4 @@
+
 'use client';
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -37,9 +38,9 @@ function formatUserRankDisplay(rank: number | undefined | null): string {
 }
 
 export default function LeaderboardPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData } = useUser();
+  const { currentUser, loadingUser, telegramAuthError } = useUser();
   const [leaderboardData, setLeaderboardData] = useState<ApiLeaderboardData | null>(null);
-  const [isLoadingApi, setIsLoadingApi] = useState(true); // API specific loading
+  const [isLoadingApi, setIsLoadingApi] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
   const processEntries = useCallback((entries: any[], pointField: string = 'points'): GenericLeaderboardEntry[] => {
@@ -54,6 +55,11 @@ export default function LeaderboardPage() {
   }, []);
 
   const fetchLeaderboard = useCallback(async () => {
+    if (!currentUser) { // If no current user, don't attempt to fetch (auth/me might have failed)
+      setIsLoadingApi(false);
+      setApiError("User not authenticated. Cannot fetch leaderboard.");
+      return;
+    }
     setIsLoadingApi(true);
     setApiError(null);
     try {
@@ -79,16 +85,21 @@ export default function LeaderboardPage() {
     } finally {
       setIsLoadingApi(false);
     }
-  }, [processEntries]);
+  }, [processEntries, currentUser]); // Added currentUser as dependency
 
   useEffect(() => {
-    // Fetch leaderboard only if user context is not loading and user is presumed logged in (or if page doesn't strictly require login for general view)
-    if (!loadingUser && currentUser) { // Ensure currentUser is present before fetching
+    if (!loadingUser) { // Only fetch once user loading is complete
+      if (currentUser) {
         fetchLeaderboard();
-    } else if (!loadingUser && !currentUser && !telegramAuthError) {
-        // If user is definitively not logged in (and no auth error yet), don't fetch.
-        // The UI below will handle this state.
-        setIsLoadingApi(false); // Stop API loading indicator
+      } else {
+        // If loading is done and still no currentUser, it means login failed or user not found.
+        setIsLoadingApi(false);
+        if (!telegramAuthError) { // If UserContext hasn't set a specific auth error
+          setApiError("User not authenticated. Please log in via Telegram.");
+        } else {
+          setApiError(telegramAuthError); // Use the specific error from UserContext
+        }
+      }
     }
   }, [loadingUser, currentUser, telegramAuthError, fetchLeaderboard]);
 
@@ -118,6 +129,16 @@ export default function LeaderboardPage() {
             <Loader2 className="h-8 w-8 sm:h-10 sm:w-10 animate-spin text-primary" />
             <p className="ml-3 text-muted-foreground">Loading {title}...</p>
           </div>
+        );
+    }
+    // Error message for this specific section if API call failed
+    if (apiError && (!leaderboardData || entries.length === 0)) {
+         return (
+            <div className="text-center py-6 sm:py-8 bg-destructive/5 border border-destructive/20 rounded-lg">
+              <AlertTriangle className="mx-auto h-8 w-8 text-destructive mb-2" />
+              <p className="text-destructive/90 mb-1">Could not load {title} data.</p>
+              <p className="text-xs text-destructive/70">{apiError}</p>
+            </div>
         );
     }
     if (!entries || entries.length === 0) {
@@ -188,32 +209,24 @@ export default function LeaderboardPage() {
     );
   }
 
-  if (telegramAuthError && !currentUser) {
-    return (
-      <AppShell>
-        <div className="container mx-auto px-4 py-8 text-center">
-          <AlertTriangle className="mx-auto h-16 w-16 text-destructive mb-4" />
-          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Authentication Error</h1>
-          <p className="text-muted-foreground mb-6">{telegramAuthError}</p>
-          <Button onClick={() => window.location.reload()} variant="outline">Try Relaunching App</Button>
-        </div>
-      </AppShell>
-    );
-  }
-  
-  if (!currentUser && !loadingUser && !telegramAuthError) {
+  // This handles the case where UserContext finished loading but failed to authenticate
+  if (!currentUser && !loadingUser) {
      return (
       <AppShell>
         <div className="container mx-auto px-4 py-8 text-center">
-          <AlertTriangle className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Login Required</h1>
-          <p className="text-muted-foreground">You need to be logged in to view the leaderboards. Please launch the app via Telegram.</p>
+          <AlertTriangle className="mx-auto h-16 w-16 text-destructive mb-4" />
+          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Access Denied</h1>
+          <p className="text-muted-foreground mb-2">
+            {telegramAuthError || "You need to be logged in to view the leaderboards. Please launch the app via Telegram."}
+          </p>
+          <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
         </div>
       </AppShell>
     );
   }
 
-
+  // At this point, currentUser should exist if we passed the above guard.
+  // However, leaderboardData might still be loading or have errored.
   return (
     <AppShell>
       <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
@@ -225,12 +238,12 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        {isLoadingApi && !leaderboardData && (
+        {isLoadingApi && !leaderboardData && !apiError && ( // Show main loader only if no data yet and no specific API error
           <div className="flex justify-center items-center py-10 sm:py-20">
             <Loader2 className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-primary" />
           </div>
         )}
-        {apiError && !isLoadingApi && (
+        {apiError && !isLoadingApi && !leaderboardData && ( // Show general API error if data couldn't be loaded at all
           <div className="text-center py-8 sm:py-10 bg-destructive/10 border border-destructive rounded-lg p-4 sm:p-6">
             <AlertTriangle className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-destructive mb-2 sm:mb-3" />
             <p className="text-destructive-foreground font-semibold text-md sm:text-lg">Failed to load leaderboard data.</p>
@@ -238,7 +251,8 @@ export default function LeaderboardPage() {
             <Button onClick={fetchLeaderboard} variant="outline" className="mt-4">Try Again</Button>
           </div>
         )}
-        {!isLoadingApi && !apiError && leaderboardData && (
+        {/* Render tabs only if there's no general API error OR if data is already loaded (even if isLoadingApi is true for a refresh) */}
+        {(!apiError || leaderboardData) && leaderboardData && (
           <Tabs defaultValue="gold" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 bg-card shadow-inner">
               <TabsTrigger value="gold" className="text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 data-[state=active]:text-yellow-400 py-1.5 sm:py-2"><Coins className="h-3 w-3 sm:h-4 sm:w-4" />Richest</TabsTrigger>
