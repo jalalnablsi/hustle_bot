@@ -162,8 +162,7 @@ export async function POST(req: NextRequest) {
         daily_ad_views_limit: 50,
         game_hearts: { 'stake-builder': 5 }, 
         last_heart_replenished: null,
-        payment_wallet_address: null,
-        payment_network: null,
+
       };
 
       let referrerUserRecord: AppUser | null = null;
