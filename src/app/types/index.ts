@@ -21,7 +21,7 @@ export interface User {
   username: string | null;
   first_name: string;
   last_name: string | null;
-  photo_url?: string | null; // Added user's photo URL
+  photo_url?: string | null;
   gold_points: number;
   diamond_points: number;
   purple_gem_points: number;
@@ -44,7 +44,7 @@ export interface User {
   payment_network?: string | null;
   daily_ad_views_limit?: number;
 
-  stake_builder_high_score?: number; // This is on user_high_scores table, not users table directly for specific user scores
+  stake_builder_high_score?: number;
   game_hearts?: GameHearts;
   last_heart_replenished?: string | null;
 
