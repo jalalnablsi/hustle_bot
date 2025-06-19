@@ -13,7 +13,6 @@ const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
 
-// Function to validate Telegram initData using HMAC-SHA256 as per Telegram documentation
 function validateTelegramData(initDataString: string, botToken: string): { isValid: boolean; userData?: any; startParam?: string | null; error?: string; } {
   if (!initDataString) {
     return { isValid: false, error: "initDataString is empty or undefined." };
@@ -38,14 +37,14 @@ function validateTelegramData(initDataString: string, botToken: string): { isVal
   try {
     const secretKeyHmac = crypto.createHmac('sha256', 'WebAppData');
     secretKeyHmac.update(botToken);
-    const secretKey = secretKeyHmac.digest(); // Raw bytes for the next HMAC key
+    const secretKey = secretKeyHmac.digest();
 
     const calculatedHashHmac = crypto.createHmac('sha256', secretKey);
     calculatedHashHmac.update(dataCheckString);
     const calculatedHash = calculatedHashHmac.digest('hex');
 
     if (calculatedHash !== hashFromTelegram) {
-      console.warn("Telegram data validation: HMAC hash mismatch.", { calculatedHash, receivedHash: hashFromTelegram, dataCheckString });
+      console.warn("Telegram data validation: HMAC hash mismatch.", { calculatedHash, receivedHash: hashFromTelegram, dataCheckStringLength: dataCheckString.length });
       return { isValid: false, error: "Invalid data signature (hash mismatch)." };
     }
   } catch (e: any) {
@@ -68,11 +67,7 @@ function validateTelegramData(initDataString: string, botToken: string): { isVal
 
   const userParam = params.get('user');
   if (!userParam) {
-    console.warn("Telegram data validation: user parameter missing in initData, though hash is valid.");
-    // Depending on strictness, you might still want to proceed or error out.
-    // If user object is absolutely required, this should be isValid: false.
-    // For now, assuming valid hash means we can trust other params like start_param if user is missing.
-    return { isValid: true, userData: null, startParam: params.get('start_param') || null, error: "User data object missing in initData." };
+    return { isValid: false, error: "User data object missing in initData." };
   }
 
   try {
@@ -102,14 +97,9 @@ export async function POST(req: NextRequest) {
 
     const validationResult = validateTelegramData(initDataString, TELEGRAM_BOT_TOKEN);
 
-    if (!validationResult.isValid) {
-      console.warn("Telegram data validation failed. Result:", validationResult);
+    if (!validationResult.isValid || !validationResult.userData) {
+      console.warn("Telegram data validation failed or user data missing. Result:", validationResult);
       return NextResponse.json({ success: false, error: validationResult.error || 'Invalid Telegram data. Please relaunch from Telegram.' }, { status: 403 });
-    }
-
-    if (!validationResult.userData) {
-      console.warn("Telegram data valid, but user object missing or unparseable in initData. Result:", validationResult);
-      return NextResponse.json({ success: false, error: validationResult.error || 'User data object missing or unparseable in initData. Please relaunch.' }, { status: 403 });
     }
 
     const tgUserData = validationResult.userData;
@@ -118,6 +108,7 @@ export async function POST(req: NextRequest) {
     const firstName = tgUserData.first_name;
     const lastName = tgUserData.last_name || null;
     const username = tgUserData.username || null;
+    const photoUrl = tgUserData.photo_url || null;
 
     const { data: user, error: fetchUserError } = await supabaseAdmin
       .from('users')
@@ -138,11 +129,12 @@ export async function POST(req: NextRequest) {
       welcomeBonusGoldApplied = WELCOME_BONUS_GOLD;
       welcomeBonusDiamondsApplied = WELCOME_BONUS_DIAMONDS;
 
-      const newUserPayload: Omit<AppUser, 'id' | 'created_at' | 'last_login' | 'referral_link' > & Partial<Pick<AppUser, 'referral_link'>> = {
+      const newUserPayload: Omit<AppUser, 'id' | 'created_at' | 'last_login' | 'referral_link' | 'stake_builder_high_score' > & Partial<Pick<AppUser, 'referral_link'>> = {
         telegram_id: telegramId,
         first_name: firstName,
         last_name: lastName,
         username: username,
+        photo_url: photoUrl,
         gold_points: welcomeBonusGoldApplied,
         diamond_points: welcomeBonusDiamondsApplied,
         purple_gem_points: 0,
@@ -153,13 +145,12 @@ export async function POST(req: NextRequest) {
         initial_free_spin_used: false,
         ad_spins_used_today_count: 0,
         ad_views_today_count: 0,
-        bonus_spins_available: 1, // Initial bonus spin
+        bonus_spins_available: 1,
         daily_reward_streak: 0,
         last_daily_reward_claim_at: null,
         daily_ad_views_limit: 50,
-        game_hearts: { 'stake-builder': { count: 5, nextRegen: null } }, // Default hearts for stake-builder
+        game_hearts: { 'stake-builder': 5 }, // Standardize simple game hearts
         last_heart_replenished: null,
-        // stake_builder_high_score: 0, // REMOVED: This column does not exist on users table
         payment_wallet_address: null,
         payment_network: null,
       };
@@ -168,11 +159,11 @@ export async function POST(req: NextRequest) {
       if (referrerTelegramId && referrerTelegramId !== telegramId) {
         const { data: refUserRec, error: fetchRefError } = await supabaseAdmin
           .from('users')
-          .select('*') // Select all fields to ensure AppUser type compatibility
+          .select('*')
           .eq('telegram_id', referrerTelegramId.toString())
           .single();
         if (!fetchRefError && refUserRec) {
-          referrerUserRecord = refUserRec as AppUser; // Cast to AppUser
+          referrerUserRecord = refUserRec as AppUser;
         } else {
           console.warn(`Referrer with TG ID ${referrerTelegramId} (from start_param) not found or error:`, fetchRefError?.message);
         }
@@ -187,7 +178,7 @@ export async function POST(req: NextRequest) {
         .from('users')
         .insert({
             ...newUserPayload,
-            referral_link: `https://t.me/YOUR_BOT_USERNAME?start=${telegramId}`, // Replace YOUR_BOT_USERNAME if different
+            referral_link: `https://t.me/YOUR_BOT_USERNAME?start=${telegramId}`,
             created_at: new Date().toISOString(),
             last_login: new Date().toISOString(),
         })
@@ -195,14 +186,12 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (insertError) {
-        console.error("Error inserting new user:", insertError);
-        // PGRST204 is "Cannot find column" -- which this change aims to fix
-        // Other errors could be different (e.g., unique constraint violation if logic is flawed)
+        console.error("Error inserting new user:", insertError.message, insertError);
         return NextResponse.json({ success: false, error: `Database error inserting user: ${insertError.message}`, details: insertError }, { status: 500 });
       }
       existingUser = insertedUser;
 
-      if (referrerUserRecord && insertedUser) { // Ensure insertedUser is not null
+      if (referrerUserRecord && insertedUser) {
         await supabaseAdmin
           .from('users')
           .update({
@@ -232,14 +221,14 @@ export async function POST(req: NextRequest) {
       console.error("Error fetching existing user:", fetchUserError);
       return NextResponse.json({ success: false, error: `Database error fetching user: ${fetchUserError.message}` }, { status: 500 });
     } else if (existingUser) {
-      // User exists, update last login and potentially other details if changed
       await supabaseAdmin
         .from('users')
         .update({
           last_login: new Date().toISOString(),
-          ...(username && username !== existingUser.username && { username }), // Only update if changed
+          ...(username && username !== existingUser.username && { username }),
           ...(firstName && firstName !== existingUser.first_name && { first_name: firstName }),
           ...(lastName !== existingUser.last_name && { last_name: lastName }),
+          ...(photoUrl !== existingUser.photo_url && { photo_url: photoUrl }),
         })
         .eq('id', existingUser.id);
     }
@@ -249,17 +238,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Failed to establish user session.' }, { status: 500 });
     }
 
-    // Prepare user object for the cookie and response (minimal, non-sensitive info for cookie)
     const userForCookieAndResponse = {
-      id: existingUser.id.toString(), // Supabase ID (UUID)
+      id: existingUser.id.toString(),
       telegram_id: existingUser.telegram_id.toString(),
       first_name: existingUser.first_name,
       username: existingUser.username,
+      photo_url: existingUser.photo_url,
     };
 
     const responsePayload: any = {
       success: true,
-      user: userForCookieAndResponse, // Send the minimal user object
+      user: userForCookieAndResponse,
       isNewUser,
       referralBonusApplied,
     };
@@ -279,16 +268,15 @@ export async function POST(req: NextRequest) {
 
     const response = NextResponse.json(responsePayload, { status: 200 });
 
-    // Set cookie with minimal Telegram user info
     response.cookies.set(
       'tgUser',
-      JSON.stringify(userForCookieAndResponse), // Use the same minimal object
+      JSON.stringify(userForCookieAndResponse),
       {
         path: '/',
-        httpOnly: true,
+        httpOnly: true, // Essential for security
         maxAge: 60 * 60 * 24 * 7, // 7 days
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Lax',
+        sameSite: 'Lax', // Good default for most cases
       }
     );
 
@@ -299,5 +287,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Internal server error: ' + error.message }, { status: 500 });
   }
 }
-
-    
