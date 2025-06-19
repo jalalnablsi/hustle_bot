@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
       .single();
 
     if (fetchUserError || !user) {
-      console.error('Adsgram Reward: User not found or DB error for Telegram ID:', telegramId, fetchUserError);
+      console.error('Adsgram Reward: User not found or DB error for Telegram ID:', telegramId, fetchUserError?.message);
       return NextResponse.json({ success: false, error: 'User not found.' }, { status: 404 });
     }
 
@@ -39,20 +40,32 @@ export async function GET(req: NextRequest) {
     let rewardAmount = 0;
     let purpose = '';
     const now = new Date().toISOString();
+    
+    // Ensure numeric fields are treated as numbers, defaulting to 0 if null/undefined
     const currentTotalAdsViews = Number(user.total_ads_views || 0) + 1;
+    const currentAdViewsToday = Number(user.ad_views_today_count || 0);
+    const dailyAdLimitGeneral = Number(user.daily_ad_views_limit || 50); // General limit
+
+    // Generic Ad Limit Check (applied to Diamond and Heart ads, Wheel ads have specific counter)
+    if (blockId === ADSGRAM_BLOCK_ID_DIAMOND || blockId === ADSGRAM_BLOCK_ID_STAKE_HEART) {
+        if (currentAdViewsToday >= dailyAdLimitGeneral) {
+             return NextResponse.json({ success: false, error: `Daily ad limit reached (${currentAdViewsToday}/${dailyAdLimitGeneral}).` }, { status: 429 });
+        }
+    }
+
 
     if (blockId === ADSGRAM_BLOCK_ID_WHEEL) {
       const currentBonusSpins = Number(user.bonus_spins_available || 0);
-      const currentAdSpinsUsed = Number(user.ad_spins_used_today_count || 0);
-      const dailySpinAdLimit = Number(user.daily_ad_views_limit || 3); // Default from wheel page, make consistent
+      const currentAdSpinsUsedForWheel = Number(user.ad_spins_used_today_count || 0); // Assuming ad_spins_used_today_count is for wheel
+      const dailySpinAdLimit = Number(user.daily_ad_views_limit || 3); // This might need a specific column 'daily_wheel_ad_limit' if it's different from general
 
-      if (currentAdSpinsUsed >= dailySpinAdLimit) {
-        return NextResponse.json({ success: false, error: `Daily ad limit for spins reached (${currentAdSpinsUsed}/${dailySpinAdLimit}).` }, { status: 429 });
+      if (currentAdSpinsUsedForWheel >= dailySpinAdLimit) {
+        return NextResponse.json({ success: false, error: `Daily ad limit for wheel spins reached (${currentAdSpinsUsedForWheel}/${dailySpinAdLimit}).` }, { status: 429 });
       }
       updatePayload = {
         bonus_spins_available: currentBonusSpins + SPIN_REWARD_AMOUNT_FROM_AD,
-        ad_spins_used_today_count: currentAdSpinsUsed + 1, // Specific counter for wheel ads
-        total_ads_views: currentTotalAdsViews,
+        ad_spins_used_today_count: currentAdSpinsUsedForWheel + 1, // Increment specific counter for wheel ads
+        total_ads_views: currentTotalAdsViews, // Increment total ads viewed
       };
       rewardType = 'spin';
       rewardAmount = SPIN_REWARD_AMOUNT_FROM_AD;
@@ -60,15 +73,10 @@ export async function GET(req: NextRequest) {
 
     } else if (blockId === ADSGRAM_BLOCK_ID_DIAMOND) {
       const currentDiamondPoints = Number(user.diamond_points || 0);
-      const currentAdViewsToday = Number(user.ad_views_today_count || 0); // General ad counter
-      const dailyDiamondAdLimit = Number(user.daily_ad_views_limit || 50);
-
-      if (currentAdViewsToday >= dailyDiamondAdLimit) {
-         return NextResponse.json({ success: false, error: `Daily ad limit for diamonds reached (${currentAdViewsToday}/${dailyDiamondAdLimit}).` }, { status: 429 });
-      }
+      // General ad counter 'ad_views_today_count' is already checked above
       updatePayload = {
         diamond_points: currentDiamondPoints + DIAMOND_REWARD_AMOUNT_FROM_AD,
-        ad_views_today_count: currentAdViewsToday + 1,
+        ad_views_today_count: currentAdViewsToday + 1, // Increment general ad counter
         total_ads_views: currentTotalAdsViews,
       };
       rewardType = 'diamond';
@@ -77,25 +85,15 @@ export async function GET(req: NextRequest) {
 
     } else if (blockId === ADSGRAM_BLOCK_ID_STAKE_HEART) {
       const gameHeartsRaw = user.game_hearts;
-      const currentHearts = typeof gameHeartsRaw === 'object' && gameHeartsRaw !== null && gameHeartsRaw['stake-builder'] !== undefined
-        ? Number(gameHeartsRaw['stake-builder']) // Direct number access if new schema
-        : (typeof gameHeartsRaw === 'object' && gameHeartsRaw !== null && typeof gameHeartsRaw['stake-builder'] === 'object' && gameHeartsRaw['stake-builder'] !== null
-            ? Number(gameHeartsRaw['stake-builder'].count) // Access .count if old schema
-            : 0);
+      // Standardizing to simple key-value: { 'stake-builder': count }
+      const currentHearts = Number(gameHeartsRaw?.['stake-builder'] || 0);
       
-      const currentAdViewsToday = Number(user.ad_views_today_count || 0); // Using general ad counter
-      const dailyAdLimit = Number(user.daily_ad_views_limit || 50);
-
-
-      if (currentAdViewsToday >= dailyAdLimit) {
-        return NextResponse.json({ success: false, error: `Daily ad limit for hearts reached (${currentAdViewsToday}/${dailyAdLimit}).` }, { status: 429 });
-      }
+      // General ad counter 'ad_views_today_count' is already checked above
       if (currentHearts >= MAX_POOLED_HEARTS_STAKE_BUILDER) {
         return NextResponse.json({ success: false, error: 'Maximum hearts already reached for Stake Builder.' }, { status: 403 });
       }
 
       const updatedGameHearts = { ...(typeof gameHeartsRaw === 'object' && gameHeartsRaw !== null ? gameHeartsRaw : {}) };
-      // Standardize game_hearts to be simple key-value { 'game-id': count }
       updatedGameHearts['stake-builder'] = currentHearts + HEART_REWARD_AMOUNT_FROM_AD;
       
       updatePayload = {
@@ -122,6 +120,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Failed to update user details.' }, { status: 500 });
     }
 
+    // Log the ad view
     const { error: logError } = await supabaseAdmin
       .from('ad_views_log')
       .insert({
@@ -137,6 +136,7 @@ export async function GET(req: NextRequest) {
 
     if (logError) {
       console.error('Adsgram Reward: Error logging ad view:', user.id, logError);
+      // Non-critical, so don't fail the request if logging fails
     }
 
     return NextResponse.json({ success: true, message: `Reward processed for block ${blockId}.` });
