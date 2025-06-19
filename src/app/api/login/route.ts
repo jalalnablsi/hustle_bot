@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
         .from('users')
         .insert({
             ...newUserPayload,
-            referral_link: `https://t.me/YOUR_BOT_USERNAME?start=${telegramId}`,
+            referral_link: `https://t.me/HustleSoulBot/Start?start=${telegramId}`,
             created_at: new Date().toISOString(),
             last_login: new Date().toISOString(),
         })
