@@ -13,7 +13,14 @@ const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
 
-function validateTelegramData(initDataString: string, botToken: string): { isValid: boolean; userData?: any; startParam?: string | null; error?: string; } {
+interface ValidatedTelegramData {
+  isValid: boolean;
+  userData?: any;
+  startParam?: string | null;
+  error?: string;
+}
+
+function validateTelegramData(initDataString: string, botToken: string): ValidatedTelegramData {
   if (!initDataString) {
     return { isValid: false, error: "initDataString is empty or undefined." };
   }
@@ -31,25 +38,27 @@ function validateTelegramData(initDataString: string, botToken: string): { isVal
       dataToCheck.push(`${key}=${value}`);
     }
   });
-  dataToCheck.sort();
+  dataToCheck.sort(); // Sort alphabetically
   const dataCheckString = dataToCheck.join('\n');
 
   try {
-    const secretKeyHmac = crypto.createHmac('sha256', 'WebAppData');
-    secretKeyHmac.update(botToken);
-    const secretKey = secretKeyHmac.digest();
+    // Step 1: Create secret_key from bot_token
+    const secretKeyHmac = crypto.createHmac('sha256', 'WebAppData'); // "WebAppData" is the key for this HMAC
+    secretKeyHmac.update(botToken); // bot_token is the data
+    const secretKey = secretKeyHmac.digest(); // This is the raw binary secret_key
 
-    const calculatedHashHmac = crypto.createHmac('sha256', secretKey);
-    calculatedHashHmac.update(dataCheckString);
+    // Step 2: Calculate hash of data_check_string using secret_key
+    const calculatedHashHmac = crypto.createHmac('sha256', secretKey); // secretKey is the key for this HMAC
+    calculatedHashHmac.update(dataCheckString); // data_check_string is the data
     const calculatedHash = calculatedHashHmac.digest('hex');
 
     if (calculatedHash !== hashFromTelegram) {
-      console.warn("Telegram data validation: HMAC hash mismatch.", { calculatedHash, receivedHash: hashFromTelegram, dataCheckStringLength: dataCheckString.length });
+      console.warn("Telegram data validation: HMAC hash mismatch.", { calculatedHash, receivedHash: hashFromTelegram });
       return { isValid: false, error: "Invalid data signature (hash mismatch)." };
     }
   } catch (e: any) {
-    console.error("Error during HMAC calculation:", e);
-    return { isValid: false, error: "Server error during data validation." };
+    console.error("Error during HMAC calculation for validation:", e);
+    return { isValid: false, error: "Server error during data validation (HMAC)." };
   }
 
   const authDateParam = params.get('auth_date');
@@ -67,7 +76,7 @@ function validateTelegramData(initDataString: string, botToken: string): { isVal
 
   const userParam = params.get('user');
   if (!userParam) {
-    return { isValid: false, error: "User data object missing in initData." };
+    return { isValid: false, error: "User data object (user=...) missing in initData." };
   }
 
   try {
@@ -129,12 +138,14 @@ export async function POST(req: NextRequest) {
       welcomeBonusGoldApplied = WELCOME_BONUS_GOLD;
       welcomeBonusDiamondsApplied = WELCOME_BONUS_DIAMONDS;
 
-      const newUserPayload: Omit<AppUser, 'id' | 'created_at' | 'last_login' | 'referral_link' | 'stake_builder_high_score' > & Partial<Pick<AppUser, 'referral_link'>> = {
+      // Explicitly Omit 'id', 'created_at', 'last_login' as they are auto-generated or set separately
+      // Omit 'stake_builder_high_score' as it's not in the 'users' table
+      const newUserPayload: Omit<AppUser, 'id' | 'created_at' | 'last_login' | 'stake_builder_high_score' | 'referral_link'> & Partial<Pick<AppUser, 'referral_link'>> = {
         telegram_id: telegramId,
         first_name: firstName,
         last_name: lastName,
         username: username,
-        photo_url: photoUrl,
+        photo_url: photoUrl, // Added photo_url
         gold_points: welcomeBonusGoldApplied,
         diamond_points: welcomeBonusDiamondsApplied,
         purple_gem_points: 0,
@@ -145,11 +156,11 @@ export async function POST(req: NextRequest) {
         initial_free_spin_used: false,
         ad_spins_used_today_count: 0,
         ad_views_today_count: 0,
-        bonus_spins_available: 1,
+        bonus_spins_available: 1, // Initial bonus spin
         daily_reward_streak: 0,
         last_daily_reward_claim_at: null,
         daily_ad_views_limit: 50,
-        game_hearts: { 'stake-builder': 5 }, // Standardize simple game hearts
+        game_hearts: { 'stake-builder': 5 }, 
         last_heart_replenished: null,
         payment_wallet_address: null,
         payment_network: null,
@@ -177,8 +188,8 @@ export async function POST(req: NextRequest) {
       const { data: insertedUser, error: insertError } = await supabaseAdmin
         .from('users')
         .insert({
-            ...newUserPayload,
-            referral_link: `https://t.me/HustleSoulBot/Start?start=${telegramId}`,
+            ...newUserPayload, // Spread the payload without stake_builder_high_score
+            referral_link: `https://t.me/HustelSoulBot/Start?start=${telegramId}`, // Replace YOUR_BOT_USERNAME
             created_at: new Date().toISOString(),
             last_login: new Date().toISOString(),
         })
@@ -207,11 +218,11 @@ export async function POST(req: NextRequest) {
           .insert({
             referrer_id: referrerUserRecord.id,
             referred_id: insertedUser.id,
-            status: 'active',
+            status: 'active', // Mark as active immediately
             ad_views_count: 0,
-            rewards_collected: false,
-            last_rewarded_gold: 0,
-            last_rewarded_diamond: 0,
+            rewards_collected: false, // Initialize
+            last_rewarded_gold: 0,    // Initialize
+            last_rewarded_diamond: 0, // Initialize
             created_at: new Date().toISOString(),
           });
         referralBonusApplied = true;
@@ -221,6 +232,7 @@ export async function POST(req: NextRequest) {
       console.error("Error fetching existing user:", fetchUserError);
       return NextResponse.json({ success: false, error: `Database error fetching user: ${fetchUserError.message}` }, { status: 500 });
     } else if (existingUser) {
+      // User exists, update last_login and potentially other details if changed in Telegram
       await supabaseAdmin
         .from('users')
         .update({
@@ -228,27 +240,28 @@ export async function POST(req: NextRequest) {
           ...(username && username !== existingUser.username && { username }),
           ...(firstName && firstName !== existingUser.first_name && { first_name: firstName }),
           ...(lastName !== existingUser.last_name && { last_name: lastName }),
-          ...(photoUrl !== existingUser.photo_url && { photo_url: photoUrl }),
+          ...(photoUrl && photoUrl !== existingUser.photo_url && { photo_url: photoUrl }),
         })
         .eq('id', existingUser.id);
     }
 
     if (!existingUser) {
       console.error("Critical error: existingUser is null after create/fetch logic.");
-      return NextResponse.json({ success: false, error: 'Failed to establish user session.' }, { status: 500 });
+      return NextResponse.json({ success: false, error: 'Failed to establish user session after create/fetch.' }, { status: 500 });
     }
 
+    // Prepare a minimal user object for the cookie and initial client-side response
     const userForCookieAndResponse = {
-      id: existingUser.id.toString(),
-      telegram_id: existingUser.telegram_id.toString(),
+      id: existingUser.id.toString(), // Essential for subsequent API calls like /auth/me
+      telegram_id: existingUser.telegram_id.toString(), // Good to have for debugging/verification
       first_name: existingUser.first_name,
       username: existingUser.username,
-      photo_url: existingUser.photo_url,
+      photo_url: existingUser.photo_url, // Include photo_url in cookie
     };
 
     const responsePayload: any = {
       success: true,
-      user: userForCookieAndResponse,
+      user: userForCookieAndResponse, // Send minimal user object to client
       isNewUser,
       referralBonusApplied,
     };
@@ -268,15 +281,16 @@ export async function POST(req: NextRequest) {
 
     const response = NextResponse.json(responsePayload, { status: 200 });
 
+    // Set HTTPOnly cookie for session management
     response.cookies.set(
       'tgUser',
-      JSON.stringify(userForCookieAndResponse),
+      JSON.stringify(userForCookieAndResponse), // Store the minimal user object
       {
         path: '/',
-        httpOnly: true, // Essential for security
+        httpOnly: true, 
         maxAge: 60 * 60 * 24 * 7, // 7 days
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Lax', // Good default for most cases
+        sameSite: 'Lax',
       }
     );
 
@@ -284,6 +298,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('Login API error:', error.message, error.stack, error);
-    return NextResponse.json({ success: false, error: 'Internal server error: ' + error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Internal server error: ' + error.message, details: error.toString() }, { status: 500 });
   }
 }
