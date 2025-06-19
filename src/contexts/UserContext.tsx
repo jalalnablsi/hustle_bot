@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import type { AppUser } from '@/app/types';
 import { retrieveLaunchParams } from '@telegram-apps/sdk';
-import { useMiniApp } from '@telegram-apps/sdk-react';
+import { useMiniApp, useInitData } from '@telegram-apps/sdk-react';
 
 const LOCAL_STORAGE_USER_KEY = 'hustleSoulUserMinimal';
 
@@ -24,7 +24,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loadingUserInternal, setLoadingUserInternal] = useState(true);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  
   const miniApp = useMiniApp();
+  const initDataResult = useInitData();
 
   useEffect(() => {
     setIsMounted(true);
@@ -33,6 +35,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const fetchUserDataById = useCallback(async (userId: string): Promise<AppUser | null> => {
     console.log(`UserContext: fetchUserDataById called for ID: ${userId}`);
+    setLoadingUserInternal(true); // Ensure loading is true during this direct fetch
     try {
       const response = await fetch(`/api/auth/fetch-by-id?userId=${userId}`);
       const data = await response.json();
@@ -40,12 +43,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
         console.log("UserContext: User data fetched by ID successfully:", data.user.id);
         return data.user as AppUser;
       } else {
-        console.warn(`UserContext: Failed to fetch user by ID ${userId}. Error: ${data.error}`);
+        let errorMsg = `Failed to fetch user by ID ${userId}.`;
+        if (data && data.error) {
+            errorMsg += typeof data.error === 'string' ? data.error : (data.error.message || "Unknown server error.");
+        } else if (!response.ok) {
+            errorMsg += ` Status: ${response.status}`;
+        }
+        console.warn(`UserContext: ${errorMsg}`);
+        // Do not set telegramAuthError here, let the caller decide.
         return null;
       }
     } catch (error: any) {
-      console.error(`UserContext: Network error fetching user by ID ${userId}:`, error.message);
+      console.error(`UserContext: Network error fetching user by ID ${userId}:`, (error.message || String(error)));
+      // Do not set telegramAuthError here.
       return null;
+    } finally {
+      // setLoadingUserInternal(false); // Loading state should be managed by the calling function for this helper
     }
   }, []);
 
@@ -70,8 +83,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
         console.log("UserContext: User data fetched and set successfully from /api/auth/me.");
         return data.user as AppUser;
       } else {
-        console.warn(`UserContext: /api/auth/me failed. Status: ${response.status}, Error: ${data.error}. Attempting localStorage fallback if initial auth.`);
+        let meErrorMessage = 'Session check via /api/auth/me failed. ';
+        if (data && data.error) {
+            if (typeof data.error === 'string') meErrorMessage += data.error;
+            else if (typeof data.error === 'object' && data.error.message) meErrorMessage += data.error.message;
+            else meErrorMessage += 'Unknown error from /api/auth/me.';
+        } else if (!response.ok) {
+            meErrorMessage += `Server responded with status ${response.status}.`;
+        } else {
+            meErrorMessage += 'No user data returned from session check.';
+        }
+        console.warn(`UserContext: ${meErrorMessage}`);
+
         if (isInitialAuthCall) {
+          console.log("UserContext: /api/auth/me failed during initial auth. Attempting localStorage fallback.");
           const storedMinimalUserStr = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
           if (storedMinimalUserStr) {
             console.log("UserContext: Found minimal user data in localStorage.");
@@ -82,49 +107,56 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 const userFromId = await fetchUserDataById(minimalUser.id);
                 if (userFromId) {
                   setCurrentUser(userFromId);
-                  setTelegramAuthError(null); // Clear error if fallback succeeds
+                  setTelegramAuthError(null);
                   console.log("UserContext: User data successfully fetched via localStorage ID fallback.");
                   return userFromId;
                 } else {
                   console.warn("UserContext: localStorage ID fallback failed to fetch full user data.");
+                   setTelegramAuthError("Could not re-authenticate using stored ID. Please try a full relaunch from Telegram.");
                 }
+              } else {
+                localStorage.removeItem(LOCAL_STORAGE_USER_KEY); // Invalid stored data
+                setTelegramAuthError("Stored user identifier was invalid. Please relaunch.");
               }
-            } catch (e) {
-              console.error("UserContext: Error parsing user data from localStorage:", e);
-              localStorage.removeItem(LOCAL_STORAGE_USER_KEY); // Clear corrupted data
+            } catch (e: any) {
+              console.error("UserContext: Error parsing user data from localStorage:", (e.message || String(e)));
+              localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+              setTelegramAuthError("Error reading stored user data. Please relaunch.");
             }
           } else {
             console.log("UserContext: No minimal user data found in localStorage for fallback.");
+            setTelegramAuthError(meErrorMessage); // Use the error from /api/auth/me if no localStorage
           }
-        }
-        // If we reach here, /api/auth/me failed and localStorage fallback also failed or wasn't applicable
-        const errorMsg = data.error || `Failed to authenticate user session. Please relaunch.`;
-        if (!telegramAuthError && (!isInitialAuthCall || response.status !== 401)) { // Don't overwrite a more specific login error
-            setTelegramAuthError(errorMsg);
+        } else { // Not an initial auth call, so just report the /api/auth/me failure
+            setTelegramAuthError(meErrorMessage);
         }
         setCurrentUser(null);
         return null;
       }
     } catch (error: any) {
-      console.error("UserContext: Network error in fetchUserData:", error.message, error.stack);
-      const netErrorMsg = 'Network error while fetching user data. Please check connection and relaunch.';
-      if (!telegramAuthError) {
-         setTelegramAuthError(netErrorMsg);
+      let networkErrorMessage = 'Network error while fetching user data. ';
+      if (error && error.message) {
+        networkErrorMessage += error.message;
+      } else {
+        networkErrorMessage += 'Please check connection and relaunch.';
       }
+      console.error('UserContext: Network error in fetchUserData:', networkErrorMessage, error);
+      setTelegramAuthError(networkErrorMessage);
       setCurrentUser(null);
       return null;
     } finally {
       if (!isInitialAuthCall) {
+        console.log("UserContext: fetchUserData (standalone) FINALLY. Setting loading to false.");
         setLoadingUserInternal(false);
       }
     }
-  }, [fetchUserDataById, telegramAuthError]);
+  }, [fetchUserDataById]);
 
 
   const initializeTelegramSession = useCallback(async (retrievedInitDataRaw: string) => {
     console.log("UserContext: Entered initializeTelegramSession with initDataRaw:", retrievedInitDataRaw ? "Present" : "MISSING");
     setTelegramAuthError(null);
-    // setLoadingUserInternal should already be true from the useEffect that calls this.
+    // setLoadingUserInternal is true by default or set by caller
 
     try {
       if (miniApp && typeof miniApp.ready === 'function') {
@@ -136,7 +168,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         miniApp.expand();
       }
 
-      console.log("UserContext: Attempting to call /api/login");
+      console.log("UserContext: Attempting to call /api/login with initDataRaw");
       const loginResponse = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -146,121 +178,128 @@ export function UserProvider({ children }: { children: ReactNode }) {
       console.log("UserContext: /api/login response:", { status: loginResponse.status, data: loginData });
 
       if (!loginResponse.ok || !loginData.success) {
-        const errorDetails = loginData.details ? ` Details: ${JSON.stringify(loginData.details)}` : '';
-        const errorMessage = loginData.error || `Login API call failed. Please relaunch.${errorDetails}`;
-        throw new Error(errorMessage);
+        let loginErrorMsg = "Login API call failed. ";
+        if (loginData && loginData.error) {
+            if (typeof loginData.error === 'string') loginErrorMsg += loginData.error;
+            else if (typeof loginData.error === 'object' && loginData.error.message) loginErrorMsg += loginData.error.message;
+            else loginErrorMsg += 'Unknown error during login.';
+        } else if (!loginResponse.ok) {
+            loginErrorMsg += `Server responded with status ${loginResponse.status}.`;
+        }
+        loginErrorMsg += " Please relaunch.";
+        console.error("UserContext: Login failure -", loginErrorMsg, loginData.details ? `Details: ${JSON.stringify(loginData.details)}` : '');
+        throw new Error(loginErrorMsg);
       }
 
-      if (loginData.user) {
+      if (loginData.user && loginData.user.id) { // Ensure user and id exist
         console.log("UserContext: /api/login successful. Storing minimal user data to localStorage:", loginData.user);
         localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(loginData.user));
+      } else {
+        console.warn("UserContext: /api/login successful but no user data in response or user.id missing. Cannot store to localStorage.");
       }
 
       console.log("UserContext: Login successful. Fetching full user data from /api/auth/me (as part of initial auth).");
       const user = await fetchUserData(true); // true indicates this is part of initial auth
       if (!user) {
         console.error("UserContext: fetchUserData returned null after a successful /api/login. /api/auth/me or fallback likely failed.");
-        if (!telegramAuthError) { // fetchUserData should set its own error
+        // telegramAuthError should be set by fetchUserData in this case
+        if (!telegramAuthError) { // Safety net if fetchUserData didn't set one
             setTelegramAuthError("Failed to retrieve user details after login. Please relaunch.");
         }
       } else {
         console.log("UserContext: User fully authenticated and data fetched via initializeTelegramSession:", user.id);
       }
     } catch (error: any) {
-      console.error('UserContext: Error during initializeTelegramSession catch block:', error.message, error.stack);
-      setTelegramAuthError(error.message || 'An unexpected error occurred during session initialization. Please relaunch.');
+      let sessionInitErrorMsg = "Error during session initialization. ";
+      if (error && error.message) {
+        sessionInitErrorMsg += error.message;
+      } else {
+        sessionInitErrorMsg += 'An unexpected error occurred. Please relaunch.';
+      }
+      console.error('UserContext: Error during initializeTelegramSession catch block:', sessionInitErrorMsg, error);
+      setTelegramAuthError(sessionInitErrorMsg);
       setCurrentUser(null);
-      localStorage.removeItem(LOCAL_STORAGE_USER_KEY); // Clear local storage on login error
+      localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
     } finally {
       console.log("UserContext: initializeTelegramSession FINALLY block. Setting loadingUserInternal to false.");
       setLoadingUserInternal(false);
     }
-  }, [miniApp, fetchUserData, telegramAuthError]);
+  }, [miniApp, fetchUserData, telegramAuthError]); // Added telegramAuthError
 
   useEffect(() => {
     if (!isMounted) {
       console.log("UserContext: Main initialization useEffect - SKIPPING (not mounted yet).");
       return;
     }
-    console.log("UserContext: Main initialization useEffect - RUNNING (isMounted). CurrentUser:", currentUser?.id, "Loading:", loadingUserInternal);
+    console.log("UserContext: Main initialization useEffect - RUNNING (isMounted). currentUser:", currentUser?.id, "loadingUserInternal:", loadingUserInternal, "initDataResult:", initDataResult);
 
-    if (currentUser) { // If user is already loaded (e.g. from a previous session still valid with cookie)
-        console.log("UserContext: User already present, skipping initData retrieval and login attempt.");
-        setLoadingUserInternal(false);
-        return;
+    if (currentUser) {
+      console.log("UserContext: User already present, skipping initData retrieval and login attempt.");
+      setLoadingUserInternal(false);
+      return;
     }
     
-    // Try to get user from localStorage first on subsequent loads if no cookie session
-    const storedMinimalUserStr = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-    if (storedMinimalUserStr && !currentUser) { // Added !currentUser to avoid re-fetching if cookie worked
-        console.log("UserContext: Found minimal user in localStorage, attempting to fetch full data by ID as initial step.");
-        try {
-            const minimalUser = JSON.parse(storedMinimalUserStr);
-            if (minimalUser && minimalUser.id) {
-                fetchUserDataById(minimalUser.id).then(userFromId => {
-                    if (userFromId) {
-                        setCurrentUser(userFromId);
-                        setTelegramAuthError(null);
-                        console.log("UserContext: Successfully re-authenticated user from localStorage ID on app load.");
-                    } else {
-                        console.warn("UserContext: Failed to re-authenticate from localStorage ID, proceeding to full initData flow.");
-                        localStorage.removeItem(LOCAL_STORAGE_USER_KEY); // Stale/invalid data
-                        // Proceed to initData flow below
-                    }
-                    // setLoadingUserInternal(false); // This path should also set loading to false.
-                }).catch(e => {
-                     console.error("UserContext: Error fetching by ID from localStorage:", e);
-                     localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-                }).finally(() => {
-                    // If fetch by ID failed, we might still want to try full initData flow, so don't set loading false here
-                    // Let the main initData flow handle the final loading state.
-                    // However, if it succeeded, we should stop loading.
-                    // This logic is tricky. The main effect below also runs.
-                });
-            }
-        } catch (e) {
-            console.error("UserContext: Error parsing localStorage data for initial check:", e);
-            localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-        }
+    // Only proceed if not already loading from a previous attempt in this effect run
+    if (!loadingUserInternal && !currentUser) {
+        setLoadingUserInternal(true); // Set loading true for this new attempt
+        setTelegramAuthError(null); // Clear previous errors for this new attempt
     }
 
 
-    console.log("UserContext: Attempting to call retrieveLaunchParams().");
-    let launchParams;
-    try {
-      launchParams = retrieveLaunchParams();
-    } catch (sdkError: any) {
-      console.error("UserContext: Error during retrieveLaunchParams() call:", sdkError.message, sdkError.stack);
-      setTelegramAuthError(`Error retrieving launch params from SDK: ${sdkError.message}. Relaunch.`);
+    if (initDataResult === undefined) {
+      console.log("UserContext: initDataResult is UNDEFINED. Waiting for SDK... (loadingUserInternal remains true)");
+      // setLoadingUserInternal(true) should already be active or set above
+      return; // SDK still loading initData
+    }
+
+    if (initDataResult === null || !initDataResult.initDataRaw) {
+      const errorMsg = 'Telegram launch parameters (initData) were not found or are invalid. Please ensure the app is launched correctly through the bot.';
+      console.warn(`UserContext: initDataResult is NULL or initDataRaw is missing. Error: "${errorMsg}"`);
+      
+      // Attempt localStorage + fetchById fallback ONLY IF initData is truly unavailable
+      // and we haven't already successfully loaded a user.
+      console.log("UserContext: initData unavailable. Attempting localStorage + fetchById fallback.");
+      const storedMinimalUserStr = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
+      if (storedMinimalUserStr) {
+        try {
+          const minimalUser = JSON.parse(storedMinimalUserStr);
+          if (minimalUser && minimalUser.id) {
+            fetchUserDataById(minimalUser.id).then(userFromId => {
+              if (userFromId) {
+                setCurrentUser(userFromId);
+                setTelegramAuthError(null);
+                console.log("UserContext: Successfully re-authenticated user from localStorage ID on app load (initData missing path).");
+              } else {
+                localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+                setTelegramAuthError("Failed to re-verify stored session. Please relaunch from Telegram.");
+              }
+            }).catch(e => {
+              localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+              setTelegramAuthError(`Error during stored session re-verification: ${e.message || String(e)}. Please relaunch.`);
+            }).finally(() => {
+              setLoadingUserInternal(false);
+            });
+            return; // Exit after initiating fetch-by-id
+          } else {
+             localStorage.removeItem(LOCAL_STORAGE_USER_KEY); // Invalid format
+          }
+        } catch(e) {
+           localStorage.removeItem(LOCAL_STORAGE_USER_KEY); // Parse error
+           console.error("UserContext: Error parsing localStorage for initData fallback:", e);
+        }
+      }
+      // If localStorage fallback also fails or not applicable:
+      setTelegramAuthError(errorMsg);
       setCurrentUser(null);
       setLoadingUserInternal(false);
       return;
     }
 
-    const initDataRaw = launchParams.initDataRaw;
-    console.log("UserContext: retrieveLaunchParams() result. initDataRaw:", initDataRaw ? "Found" : "NOT FOUND/EMPTY");
-
-    if (!initDataRaw) {
-      console.warn("UserContext: initDataRaw is missing or empty. This may be normal if not in Telegram or if SDK hasn't initialized it yet. Error will be set if it remains unavailable.");
-      // Check if we already have a user from localStorage ID check earlier
-      if (!currentUser) {
-           // Try to fetch user via cookie one last time if initData is missing.
-           // This covers scenarios where app is opened and cookie is valid but initData isn't (e.g. direct link after login)
-            fetchUserData(true).then(userFromCookie => {
-                if (!userFromCookie && !currentUser) { // Still no user
-                    setTelegramAuthError('Telegram launch parameters (initData) were not found. Please launch correctly through the bot.');
-                }
-            }).finally(() => {
-                setLoadingUserInternal(false);
-            });
-      } else {
-        setLoadingUserInternal(false); // User found from localStorage, and initData missing (which is fine)
-      }
-      return;
-    }
-
-    // If initDataRaw IS present, proceed with session initialization
-    // Small delay to allow SDK to fully initialize if needed
+    // If initDataRaw IS present:
+    const { initDataRaw } = initDataResult;
+    console.log("UserContext: initDataRaw is PRESENT. Proceeding with initializeTelegramSession.");
+    
+    // Small delay before initializing, can sometimes help with SDK readiness.
     const timerId = setTimeout(() => {
         console.log("UserContext: Timeout triggered. Calling initializeTelegramSession with retrieved initDataRaw.");
         initializeTelegramSession(initDataRaw);
@@ -270,7 +309,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
       console.log("UserContext: Main initialization useEffect cleanup (clearing timeout).");
       clearTimeout(timerId);
     };
-  }, [isMounted, initializeTelegramSession, fetchUserDataById, currentUser]); // Added fetchUserDataById, currentUser
+
+  }, [isMounted, initDataResult, currentUser, initializeTelegramSession, fetchUserDataById]); // Added fetchUserDataById
+
 
   const updateUserSession = useCallback((updatedUserData: Partial<AppUser>) => {
     console.log("UserContext: updateUserSession called with:", updatedUserData);
@@ -284,6 +325,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           (newUser as any)[key] = Boolean(updatedUserData[key]);
         }
       });
+      console.log("UserContext: User session updated. New state:", newUser);
       return newUser;
     });
   }, []);
@@ -292,12 +334,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const providerValue = React.useMemo(() => ({
     currentUser,
-    setCurrentUser,
+    setCurrentUser, // Exposing this directly for potential advanced use or reset, though updateUserSession is preferred
     updateUserSession,
     loadingUser: finalLoadingState,
     fetchUserData,
     telegramAuthError
   }), [currentUser, updateUserSession, finalLoadingState, fetchUserData, telegramAuthError]);
+
+  console.log("UserContext: Rendering Provider. loadingUser (final):", finalLoadingState, "currentUser:", currentUser?.id, "telegramAuthError:", telegramAuthError);
 
   return (
     <UserContext.Provider value={providerValue}>
