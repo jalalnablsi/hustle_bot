@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
@@ -20,20 +19,21 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Adsgram) {
       try {
-        const initOptions: AdsgramInitOptions = { 
+        const initOptions: AdsgramInitOptions = {
           blockId,
           // Enable debug mode for testing if needed, remove for production
-          // debug: process.env.NODE_ENV === 'development', 
-          // debugBannerType: 'FullscreenMedia' 
+          // debug: process.env.NODE_ENV === 'development',
+          // debugBannerType: 'FullscreenMedia'
         };
         AdControllerRef.current = window.Adsgram.init(initOptions);
         if (!AdControllerRef.current) {
           console.warn(`Adsgram init failed for blockId: ${blockId}. Adsgram.init returned undefined.`);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Adsgram SDK initialization error:", error);
-        // Optionally, inform the user via toast or a state update
-        // onError?.({ error: true, done: false, state: 'load', description: 'Adsgram SDK failed to initialize.' });
+        const description = error?.message || 'Adsgram SDK failed to initialize.';
+        // It's better to let the show() attempt handle onError for consistency
+        // onError?.({ error: true, done: false, state: 'load', description });
       }
     } else if (typeof window !== 'undefined' && !window.Adsgram) {
         console.warn("Adsgram SDK (window.Adsgram) not found. Ensure the script is loaded.");
@@ -45,52 +45,64 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
     if (AdControllerRef.current) {
       try {
         // The .show() promise resolves when the ad is successfully shown and then closed.
-        // For rewarded ads, this usually means it was watched to completion.
-        // For interstitial, it means it was closed (either watched or skipped).
         await AdControllerRef.current.show();
-        // This client-side onReward is for immediate UI feedback.
-        // The actual reward should be granted by your backend via Adsgram's server-to-server callback.
         onReward?.();
-      } catch (result: any) { // Catching 'any' as ShowPromiseResult might not be the only error type
+      } catch (caughtError: any) { // Catching 'any' as ShowPromiseResult might not be the only error type
         let errorResult: ShowPromiseResult;
-        if (result && typeof result.error === 'boolean' && typeof result.done === 'boolean') {
-          errorResult = result as ShowPromiseResult;
-        } else {
-          // Construct a ShowPromiseResult for unexpected errors
+        let safeDescription: string;
+
+        if (caughtError && typeof caughtError.error === 'boolean' && typeof caughtError.done === 'boolean' && typeof caughtError.state === 'string') {
+          // It looks like a ShowPromiseResult
+          errorResult = caughtError as ShowPromiseResult;
+          safeDescription = errorResult.description || "An unknown ad error occurred.";
+        } else if (caughtError && typeof caughtError.message === 'string') {
+          // It looks like a standard Error object
+          safeDescription = caughtError.message;
           errorResult = {
             error: true,
             done: false,
             state: 'show', // Assuming error happened during show attempt
-            description: result?.message || 'An unexpected error occurred with the ad.',
+            description: safeDescription,
+          };
+        } else {
+          // Fallback for other unexpected error structures
+          safeDescription = caughtError ? String(caughtError) : "An unexpected and undefined ad error occurred.";
+          errorResult = {
+            error: true,
+            done: false,
+            state: 'show',
+            description: safeDescription,
           };
         }
         
         console.warn('Adsgram ad error/closed early:', errorResult);
-        onError?.(errorResult);
+        onError?.(errorResult); // Pass the structured or reconstructed errorResult
 
-        // Provide user feedback for common scenarios
-        if (errorResult.description?.includes("too_many_shows")) {
+        // Provide user feedback for common scenarios based on the safeDescription
+        if (safeDescription.includes("too_many_shows")) {
             toast({ title: "Ad Limit", description: "Too many ads shown, please try again later.", variant: "default"});
-        } else if (errorResult.description?.includes("no_ad_available")) {
+        } else if (safeDescription.includes("no_ad_available")) {
             toast({ title: "No Ad Available", description: "Please try again in a moment.", variant: "default"});
-        } else if (errorResult.error && errorResult.description !== 'Adsgram script not loaded' && errorResult.description !== 'Adsgram SDK failed to initialize.') {
-            // General error if ad fails to play
-            // toast({ title: "Ad Playback Error", description: "Could not play ad. " + (errorResult.description || ""), variant: "destructive"});
+        } else if (errorResult.error && !safeDescription.includes('Adsgram script not loaded') && !safeDescription.includes('Adsgram SDK failed to initialize.')) {
+            // Avoid toasting for SDK load issues here as they are handled below or by initial setup.
+            // General error toast if an ad fails to play, using the safeDescription.
+            // Commented out to avoid double toasting if pages also toast.
+            // toast({ title: "Ad Playback Error", description: safeDescription, variant: "destructive"});
         }
-        // The onClose callback is useful if you want to react to the ad dialog closing,
-        // regardless of whether it was a reward, skip, or error.
+        
         onClose?.();
       }
     } else {
-      console.warn('Adsgram AdController not available. Script might not be loaded or init failed.');
+      const safeDescription = 'Adsgram is not ready. Please try again in a moment.';
+      console.warn(safeDescription, 'AdController not available. Script might not be loaded or init failed.');
       const notLoadedError: ShowPromiseResult = {
         error: true,
         done: false,
         state: 'load',
-        description: 'Adsgram is not ready. Please try again in a moment.',
+        description: safeDescription,
       };
       onError?.(notLoadedError);
-      toast({ title: "Ads Not Ready", description: notLoadedError.description, variant: "default" });
+      toast({ title: "Ads Not Ready", description: safeDescription, variant: "default" });
       onClose?.(); // Also call onClose if ad system isn't ready
     }
   }, [onError, onReward, onClose, toast]);
