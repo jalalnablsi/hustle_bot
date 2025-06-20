@@ -8,46 +8,43 @@ import { Gift, CheckCircle2, Loader2, Coins } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from '@/contexts/UserContext';
 
+function hasClaimedToday(lastClaimDate: Date | null): boolean {
+    if (!lastClaimDate) return false;
+    const today = new Date();
+    return (
+        lastClaimDate.getDate() === today.getDate() &&
+        lastClaimDate.getMonth() === today.getMonth() &&
+        lastClaimDate.getFullYear() === today.getFullYear()
+    );
+}
+
 export function DailyRewardCard() {
   const { currentUser, loadingUser: contextLoadingUser, updateUserSession } = useUser();
-  const [isClaimedTodayState, setIsClaimedTodayState] = useState(false);
-  const [timeLeft, setTimeLeft] = useState('');
-  const [isClaiming, setIsClaiming] = useState(false);
   const { toast } = useToast();
 
-  const checkClaimStatus = useCallback(() => {
-    if (currentUser?.last_daily_reward_claim_at) {
-      const lastClaimDate = new Date(currentUser.last_daily_reward_claim_at);
-      const today = new Date();
-      
-      lastClaimDate.setHours(0, 0, 0, 0);
-      today.setHours(0, 0, 0, 0);
-
-      setIsClaimedTodayState(lastClaimDate.getTime() === today.getTime());
-    } else {
-      setIsClaimedTodayState(false); 
-    }
-  }, [currentUser?.last_daily_reward_claim_at]);
+  const lastClaimDate = currentUser?.last_daily_reward_claim_at ? new Date(currentUser.last_daily_reward_claim_at) : null;
+  
+  const [isClaimed, setIsClaimed] = useState(() => hasClaimedToday(lastClaimDate));
+  const [timeLeft, setTimeLeft] = useState('');
+  const [isClaiming, setIsClaiming] = useState(false);
 
   useEffect(() => {
-    if (currentUser) { // Only check status if currentUser is available
-      checkClaimStatus();
-    }
-  }, [currentUser, checkClaimStatus]);
+    setIsClaimed(hasClaimedToday(lastClaimDate));
+  }, [lastClaimDate]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | undefined;
-    if (isClaimedTodayState) {
+    if (isClaimed) {
       const updateTimer = () => {
         const now = new Date();
-        const tomorrow = new Date(now);
+        const tomorrow = new Date();
         tomorrow.setDate(now.getDate() + 1);
         tomorrow.setHours(0, 0, 0, 0);
         const diff = tomorrow.getTime() - now.getTime();
 
         if (diff <= 0) {
           setTimeLeft('Ready!');
-          setIsClaimedTodayState(false); 
+          setIsClaimed(false); 
           if(intervalId) clearInterval(intervalId);
           return;
         }
@@ -62,14 +59,14 @@ export function DailyRewardCard() {
       setTimeLeft(''); 
     }
     return () => clearInterval(intervalId);
-  }, [isClaimedTodayState]);
+  }, [isClaimed]);
 
   const handleClaimDailyReward = async () => {
     if (!currentUser?.id) {
       toast({ title: 'Error', description: 'User not identified.', variant: 'destructive' });
       return;
     }
-    if (isClaimedTodayState) {
+    if (isClaimed) {
       toast({ title: 'Already Claimed', description: 'You have already claimed your reward today.', variant: 'default' });
       return;
     }
@@ -87,9 +84,9 @@ export function DailyRewardCard() {
         updateUserSession({
           gold_points: data.goldPoints,
           daily_reward_streak: data.dailyRewardStreak,
-          last_daily_reward_claim_at: data.claimedAt, // This should be an ISO string
+          last_daily_reward_claim_at: data.claimedAt,
         });
-        setIsClaimedTodayState(true); // Update claimed status immediately
+        setIsClaimed(true);
         toast({
           title: 'Daily Reward Claimed!',
           description: `You earned ${data.rewardAmount} GOLD. Streak: ${data.dailyRewardStreak} day(s)!`,
@@ -102,11 +99,8 @@ export function DailyRewardCard() {
           variant: data.error === 'Daily reward already claimed' ? 'default' : 'destructive',
         });
         if (data.error === 'Daily reward already claimed') {
-            setIsClaimedTodayState(true); 
-            // If server says already claimed, ensure last_daily_reward_claim_at is synced from server
-            // This typically means UserContext needs an update or a re-fetch if server state is the source of truth.
-            // For now, just setting client state to true.
-            if (data.claimedAt) { // If API returns the claim time even on "already claimed"
+            setIsClaimed(true); 
+            if (data.claimedAt) {
                 updateUserSession({ last_daily_reward_claim_at: data.claimedAt });
             }
         }
@@ -139,7 +133,7 @@ export function DailyRewardCard() {
         </Card>
     );
   }
-   if (!currentUser) { // Handles case where user is definitively not loaded (e.g. not logged in)
+   if (!currentUser) {
     return (
         <Card className="shadow-lg">
             <CardHeader>
@@ -155,7 +149,6 @@ export function DailyRewardCard() {
     );
   }
 
-
   return (
     <Card className="shadow-lg hover:shadow-primary/50 transition-shadow duration-300">
       <CardHeader>
@@ -164,11 +157,11 @@ export function DailyRewardCard() {
           Daily Login Reward
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {isClaimedTodayState ? "You've claimed your reward for today." : `Claim your daily GOLD! Streak: ${currentUser?.daily_reward_streak || 0} days.`}
+          {isClaimed ? "You've claimed your reward for today." : `Claim your daily GOLD! Streak: ${currentUser?.daily_reward_streak || 0} days.`}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {isClaimedTodayState ? (
+        {isClaimed ? (
           <div className="flex flex-col items-center text-center">
             <CheckCircle2 className="h-12 w-12 text-green-500 mb-2" />
             <p className="text-lg font-semibold text-foreground">Come back tomorrow!</p>
@@ -184,3 +177,5 @@ export function DailyRewardCard() {
     </Card>
   );
 }
+
+    
