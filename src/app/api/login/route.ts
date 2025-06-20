@@ -12,7 +12,6 @@ const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200;
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
-const LOCAL_STORAGE_USER_KEY = 'hustleSoulUserMinimal'; // For client-side
 
 interface ValidatedTelegramData {
   isValid: boolean;
@@ -131,18 +130,16 @@ export async function POST(req: NextRequest) {
     let welcomeBonusDiamondsApplied = 0;
     let referralBonusGoldForReferredUser = 0;
 
-
     if (fetchUserError && fetchUserError.code === 'PGRST116') { // User not found, create new
       isNewUser = true;
       welcomeBonusGoldApplied = WELCOME_BONUS_GOLD;
       welcomeBonusDiamondsApplied = WELCOME_BONUS_DIAMONDS;
 
-      const newUserPayload: Omit<AppUser, 'id' | 'created_at' | 'last_login' | 'referral_link' | 'stake_builder_high_score'> & Partial<Pick<AppUser, 'referral_link'>> = {
+      const newUserPayload = {
         telegram_id: telegramId,
         first_name: firstName,
         last_name: lastName,
         username: username,
-        photo_url: photoUrl,
         gold_points: welcomeBonusGoldApplied,
         diamond_points: welcomeBonusDiamondsApplied,
         purple_gem_points: 0,
@@ -157,9 +154,12 @@ export async function POST(req: NextRequest) {
         daily_reward_streak: 0,
         last_daily_reward_claim_at: null,
         daily_ad_views_limit: 50,
-        game_hearts: { 'stake-builder': 5 }, 
+        game_hearts: { 'stake-builder': 5 },
         last_heart_replenished: null,
-     
+        
+        referral_link: `https://t.me/HustleSouleBot/Start?start=${telegramId}`,
+        created_at: new Date().toISOString(),
+        last_login: new Date().toISOString(),
       };
 
       let referrerUserRecord: AppUser | null = null;
@@ -183,12 +183,7 @@ export async function POST(req: NextRequest) {
 
       const { data: insertedUser, error: insertError } = await supabaseAdmin
         .from('users')
-        .insert({
-            ...newUserPayload,
-            referral_link: `https://t.me/HustleSoulBot/start?start=${telegramId}`, // Replace YOUR_BOT_USERNAME
-            created_at: new Date().toISOString(),
-            last_login: new Date().toISOString(),
-        })
+        .insert(newUserPayload)
         .select()
         .single();
 
@@ -255,7 +250,7 @@ export async function POST(req: NextRequest) {
 
     const responsePayload: any = {
       success: true,
-      user: userForCookieAndResponse, 
+      user: userForCookieAndResponse,
       isNewUser,
       referralBonusApplied,
     };
@@ -280,10 +275,10 @@ export async function POST(req: NextRequest) {
       JSON.stringify(userForCookieAndResponse),
       {
         path: '/',
-        httpOnly: true, 
+        httpOnly: true,
         maxAge: 60 * 60 * 24 * 7, // 7 days
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Lax',
+        secure: true, // MUST be true for SameSite=None
+        sameSite: 'none', // Critical for cross-site/iframe contexts
       }
     );
 
