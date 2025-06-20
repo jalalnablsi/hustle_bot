@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ const AD_REWARD_DIAMOND_AMOUNT = 1;
 export default function AdsPage() {
   const { currentUser, loadingUser: contextLoadingUser, fetchUserData, telegramAuthError } = useUser();
   const [isAdInProgress, setIsAdInProgress] = useState(false);
-  const [lastAdWatchedAndProcessed, setLastAdWatchedAndProcessed] = useState(false); // UI state for feedback
+  const [adViewCompletedServerProcessing, setAdViewCompletedServerProcessing] = useState(false);
   const { toast } = useToast();
 
   const adsWatchedToday = currentUser?.ad_views_today_count || 0;
@@ -25,7 +25,7 @@ export default function AdsPage() {
   const canWatchMoreAds = adsWatchedToday < dailyAdLimit;
 
   const handleAdsgramRewardClientSide = useCallback(() => {
-    setLastAdWatchedAndProcessed(true);
+    console.log("AdsPage: Adsgram onReward triggered.");
     toast({
         title: "Ad Watched!",
         description: (
@@ -35,27 +35,25 @@ export default function AdsPage() {
         ),
         duration: 4000,
     });
+    setAdViewCompletedServerProcessing(true); // Indicates server processing has been initiated by ad view
     // The actual reward is handled by server-to-server callback.
     // Refresh user data to reflect the new diamond count and ad views.
     setTimeout(() => { 
-        fetchUserData(); // Fetches latest user data from /api/auth/me
-    }, 2500); // Delay to allow server-to-server callback to potentially complete
-    setIsAdInProgress(false);
+        fetchUserData();
+    }, 3000); // Delay to allow server-to-server callback to potentially complete
+    // isAdInProgress will be set to false by onClose
   }, [toast, fetchUserData]);
 
   const handleAdsgramErrorClientSide = useCallback(() => {
     // Toast for error is already handled by useAdsgram hook for common cases like no_ad_available
-    setLastAdWatchedAndProcessed(false); 
-    setIsAdInProgress(false);
+    console.log("AdsPage: Adsgram onError triggered.");
+    // isAdInProgress will be set to false by onClose
   }, []);
   
   const handleAdsgramCloseClientSide = useCallback(() => {
-    // Only set ad in progress to false if it wasn't a reward event
-    // as onReward already handles it.
-    if (!lastAdWatchedAndProcessed) {
-        setIsAdInProgress(false);
-    }
-  }, [lastAdWatchedAndProcessed]);
+    console.log("AdsPage: Adsgram onClose triggered. Setting isAdInProgress to false.");
+    setIsAdInProgress(false);
+  }, []);
 
   const showAdsgramAdForDiamond = useAdsgram({
     blockId: ADSGRAM_DIAMOND_BLOCK_ID,
@@ -73,12 +71,20 @@ export default function AdsPage() {
       toast({ title: "Daily Limit Reached", description: `You've watched the maximum ${dailyAdLimit} ads for today.`, variant: "default"});
       return;
     }
-    if (isAdInProgress) return;
-
-    setLastAdWatchedAndProcessed(false); 
+    if (isAdInProgress || adViewCompletedServerProcessing) {
+        if (isAdInProgress) toast({description: "Ad already loading..."});
+        return;
+    }
+    
+    setAdViewCompletedServerProcessing(false); // Reset for new attempt
     setIsAdInProgress(true);
     await showAdsgramAdForDiamond();
-    // isAdInProgress will be set to false by onReward, onError, or onClose callbacks of useAdsgram
+  };
+
+  const handleWatchAnotherAdClick = () => {
+    setAdViewCompletedServerProcessing(false);
+    // Optionally, directly trigger handleWatchAdClick if user can watch more
+    // For now, just resetting state allows user to click the main button again
   };
 
   if (contextLoadingUser) {
@@ -120,22 +126,22 @@ export default function AdsPage() {
           <CardHeader>
             <CardTitle className="font-headline text-xl text-foreground">Current Ad Opportunity</CardTitle>
             <CardDescription className="text-muted-foreground">
-              {lastAdWatchedAndProcessed ? "Ad view completed. Reward is processing..." : isAdInProgress ? "Ad loading or playing..." : `Watch an ad to earn ${AD_REWARD_DIAMOND_AMOUNT} DIAMOND.`}
+              {adViewCompletedServerProcessing ? "Ad view logged. Reward is processing..." : isAdInProgress ? "Ad loading or playing..." : `Watch an ad to earn ${AD_REWARD_DIAMOND_AMOUNT} DIAMOND.`}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-h-[250px] flex items-center justify-center">
             {isAdInProgress ? (
               <div className="space-y-4 text-center py-8">
                 <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary mb-3" />
                 <p className="text-muted-foreground">Loading ad from Adsgram...</p>
                 <p className="text-xs text-muted-foreground">(Adsgram handles the ad display)</p>
               </div>
-            ) : lastAdWatchedAndProcessed ? (
+            ) : adViewCompletedServerProcessing ? (
               <div className="text-center py-8">
                 <CheckCircle2 className="mx-auto h-16 w-16 text-green-500 mb-4" />
                 <p className="text-lg font-semibold text-foreground">Ad View Logged!</p>
-                <p className="text-muted-foreground">Your reward is being processed by the server. Your balance will update shortly.</p>
-                 <Button onClick={() => { setLastAdWatchedAndProcessed(false); }} className="mt-4" variant="outline" disabled={!canWatchMoreAds || isAdInProgress}>
+                <p className="text-muted-foreground">Your reward is being processed. Your balance will update shortly.</p>
+                 <Button onClick={handleWatchAnotherAdClick} className="mt-4" variant="outline" disabled={!canWatchMoreAds || isAdInProgress}>
                     {canWatchMoreAds ? "Watch Another Ad" : "Daily Limit Reached"}
                 </Button>
               </div>
@@ -157,15 +163,15 @@ export default function AdsPage() {
             )}
           </CardContent>
           <CardFooter>
-            {!lastAdWatchedAndProcessed && canWatchMoreAds && (
+            {(!adViewCompletedServerProcessing && canWatchMoreAds) && (
               <Button onClick={handleWatchAdClick} className="w-full animate-pulse-glow" size="lg" disabled={!currentUser || contextLoadingUser || !canWatchMoreAds || isAdInProgress}>
                  {isAdInProgress ? <Loader2 className="mr-2 h-5 w-5 animate-spin"/> : <Tv className="mr-2 h-5 w-5" />} 
                  {isAdInProgress ? 'Loading Ad...' : 'Watch Ad via Adsgram'}
               </Button>
             )}
-            {(lastAdWatchedAndProcessed || !canWatchMoreAds) && ( // Show disabled button if ad was just watched OR if limit is reached
+            {(adViewCompletedServerProcessing || !canWatchMoreAds) && (
                  <Button className="w-full" size="lg" disabled>
-                  {lastAdWatchedAndProcessed ? "Ad Watched, Processing..." : !canWatchMoreAds ? "Daily Limit Reached" : "Watch Ad"}
+                  {adViewCompletedServerProcessing ? "Ad Watched, Processing..." : "Daily Limit Reached"}
               </Button>
             )}
           </CardFooter>
