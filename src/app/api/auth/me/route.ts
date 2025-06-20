@@ -9,10 +9,10 @@ export async function GET(req: NextRequest) {
     const tgUserCookie = req.cookies.get('tgUser');
 
 
-
+    conole.log(tgUserCookie);
     let tgUserFromCookie;
     try {
-        tgUserFromCookie = JSON.parse(tgUserCookie.value);
+        tgUserFromCookie = JSON.parse(tgUserCookie);
     } catch (e) {
         console.error('Auth me - cookie parse error:', e, { cookieValue: tgUserCookie.value.substring(0,100) });
         return NextResponse.json({ success: false, error: 'Invalid authentication cookie format.' }, { status: 400 });
