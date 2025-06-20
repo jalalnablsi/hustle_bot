@@ -22,12 +22,12 @@ interface ApiLeaderboardData {
     referrals: number | null;
     scores: number | null;
     scoreValue?: number | null;
-  };
+  } | null;
 }
 
 const rankTitles: Record<number, string> = {
   1: "The Sovereign",
-  2: "The High Lord",
+  2: "The High Lord/Lady",
   3: "The Vanguard",
 };
 
@@ -38,33 +38,28 @@ function formatUserRankDisplay(rank: number | undefined | null): string {
 }
 
 export default function LeaderboardPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
+  const { currentUser, loadingUser } = useUser();
   const [leaderboardData, setLeaderboardData] = useState<ApiLeaderboardData | null>(null);
   const [isLoadingApi, setIsLoadingApi] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  const processEntries = useCallback((entries: any[], pointField: string = 'points'): GenericLeaderboardEntry[] => {
-    return (entries || []).map((entry, index) => ({
+  const processEntries = useCallback((entries: any[] = [], pointField: string = 'points'): GenericLeaderboardEntry[] => {
+    return entries.map((entry, index) => ({
       ...entry,
       rank: entry.rank || index + 1,
       points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
-      username: entry.username || entry.users?.username || `User ${entry.user_id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
-      avatarUrl: `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700/000000' : entry.rank === 2 ? 'C0C0C0/000000' : entry.rank === 3 ? 'CD7F32/000000' : '667EEA/FFFFFF'}.png?text=${(entry.username || entry.users?.username || 'P').substring(0, 2).toUpperCase()}&font=roboto`,
+      username: entry.username || `User ${entry.id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
+      avatarUrl: entry.avatarUrl || `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700/000000' : entry.rank === 2 ? 'C0C0C0/000000' : entry.rank === 3 ? 'CD7F32/000000' : '667EEA/FFFFFF'}.png?text=${(entry.username || 'P').substring(0, 2).toUpperCase()}&font=roboto`,
       dataAiHint: "avatar person",
     }));
   }, []);
 
   const fetchLeaderboard = useCallback(async () => {
-    if (!currentUser?.id) { 
-      setIsLoadingApi(false);
-      if (!loadingUser && !telegramAuthError) { // Only set specific error if auth process complete
-         setApiError("User not authenticated. Cannot fetch leaderboard.");
-      }
-      return;
-    }
     setIsLoadingApi(true);
     setApiError(null);
     try {
+      // The API now works without a cookie for public data.
+      // The cookie is read on the backend to optionally add user_rank.
       const response = await fetch('/api/leaderboard');
       if (!response.ok) {
         const errData = await response.json().catch(() => ({ error: "Failed to parse error from server" }));
@@ -76,7 +71,7 @@ export default function LeaderboardPage() {
           top_gold: processEntries(apiResult.data.top_gold, 'points'),
           top_scores: processEntries(apiResult.data.top_scores, 'points'),
           top_referrals: processEntries(apiResult.data.top_referrals, 'points'),
-          user_rank: apiResult.data.user_rank || { gold: null, referrals: null, scores: null, scoreValue: null },
+          user_rank: apiResult.data.user_rank || null,
         });
       } else {
         throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
@@ -87,22 +82,11 @@ export default function LeaderboardPage() {
     } finally {
       setIsLoadingApi(false);
     }
-  }, [processEntries, currentUser?.id, loadingUser, telegramAuthError]); 
+  }, [processEntries]); 
 
   useEffect(() => {
-    if (!loadingUser) { 
-      if (currentUser) {
-        fetchLeaderboard();
-      } else {
-        setIsLoadingApi(false);
-        if (telegramAuthError) {
-          setApiError(telegramAuthError);
-        } else {
-           setApiError("User not authenticated. Please log in via Telegram.");
-        }
-      }
-    }
-  }, [loadingUser, currentUser, telegramAuthError, fetchLeaderboard]);
+    fetchLeaderboard();
+  }, [fetchLeaderboard]);
 
   const UserRankDisplayCard = ({ category, rank, score }: { category: string; rank: number | null | undefined; score?: number | null | undefined}) => (
     <Card className="bg-primary/10 border-primary/30 shadow-md my-2 sm:my-4 w-full max-w-xs mx-auto">
@@ -124,7 +108,7 @@ export default function LeaderboardPage() {
     userRankValue?: number | null,
     userScoreValue?: number | null
   ) => {
-    if (isLoadingApi && !leaderboardData) { // Show main loader only if no data yet
+    if (isLoadingApi && !leaderboardData) {
         return (
           <div className="flex justify-center items-center py-10 sm:py-20">
             <Loader2 className="h-8 w-8 sm:h-10 sm:w-10 animate-spin text-primary" />
@@ -133,7 +117,7 @@ export default function LeaderboardPage() {
         );
     }
     
-    if (apiError || (!leaderboardData || entries.length === 0)) { // Prioritize API error for this section
+    if (apiError && (!leaderboardData || entries.length === 0)) {
          return (
             <div className="text-center py-6 sm:py-8 bg-destructive/5 border border-destructive/20 rounded-lg">
               <AlertTriangle className="mx-auto h-8 w-8 text-destructive mb-2" />
@@ -143,7 +127,7 @@ export default function LeaderboardPage() {
             </div>
         );
     }
-    if (!entries || entries.length === 0) {
+    if (!isLoadingApi && (!entries || entries.length === 0)) {
       return (
         <div className="text-center py-6 sm:py-8">
           <p className="text-muted-foreground mb-2 sm:mb-3">No data available for {title} yet.</p>
@@ -167,7 +151,7 @@ export default function LeaderboardPage() {
            <h2 className="font-headline text-xl sm:text-2xl font-semibold text-foreground">{title}</h2>
         </div>
 
-        {currentUser || userRankValue !== undefined && (
+        {currentUser && userRankValue !== undefined && (
           <div className="mb-4 sm:mb-6">
              <UserRankDisplayCard category={title} rank={userRankValue} score={userScoreValue} />
           </div>
@@ -211,36 +195,6 @@ export default function LeaderboardPage() {
     );
   }
 
-  if (telegramAuthError || !currentUser) {
-     return (
-      <AppShell>
-        <div className="container mx-auto px-4 py-8 text-center">
-          <AlertTriangle className="mx-auto h-16 w-16 text-destructive mb-4" />
-          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Authentication Error</h1>
-          <p className="text-muted-foreground mb-2">
-            {telegramAuthError}
-          </p>
-          <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
-        </div>
-      </AppShell>
-    );
-  }
-  
-  if (!currentUser || !loadingUser || !telegramAuthError) {
-     return (
-      <AppShell>
-        <div className="container mx-auto px-4 py-8 text-center">
-          <AlertTriangle className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-          <h1 className="font-headline text-2xl font-bold text-foreground mb-3">Access Denied</h1>
-          <p className="text-muted-foreground mb-2">
-            You need to be logged in to view the leaderboards. Please launch the app via Telegram.
-          </p>
-          <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
       <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
@@ -248,25 +202,22 @@ export default function LeaderboardPage() {
           <Trophy className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-yellow-400 mb-3 sm:mb-4 animate-pulse [animation-duration:1.5s] filter drop-shadow-[0_2px_10px_hsl(var(--primary)/0.5)]" />
           <h1 className="font-headline text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-1 sm:mb-2">Hall of Hustlers</h1>
           <p className="text-md sm:text-lg text-muted-foreground">
-            See where you stand among the elite.
+            See who's on top.
           </p>
         </div>
 
-        {isLoadingApi && !leaderboardData && !apiError && (
+        {(isLoadingApi && !leaderboardData) || (loadingUser && !leaderboardData) ? (
           <div className="flex justify-center items-center py-10 sm:py-20">
             <Loader2 className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-primary" />
           </div>
-        )}
-        {apiError || !isLoadingApi || !leaderboardData && ( 
+        ) : apiError ? ( 
           <div className="text-center py-8 sm:py-10 bg-destructive/10 border border-destructive rounded-lg p-4 sm:p-6">
             <AlertTriangle className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-destructive mb-2 sm:mb-3" />
             <p className="text-destructive-foreground font-semibold text-md sm:text-lg">Failed to load leaderboard data.</p>
             <p className="text-destructive-foreground/80 text-sm">{apiError}</p>
             <Button onClick={fetchLeaderboard} variant="outline" className="mt-4">Try Again</Button>
           </div>
-        )}
-        
-        {leaderboardData && (
+        ) : leaderboardData ? (
           <Tabs defaultValue="gold" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 bg-card shadow-inner">
               <TabsTrigger value="gold" className="text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 data-[state=active]:text-yellow-400 py-1.5 sm:py-2"><Coins className="h-3 w-3 sm:h-4 sm:w-4" />Richest</TabsTrigger>
@@ -274,16 +225,16 @@ export default function LeaderboardPage() {
               <TabsTrigger value="referrals" className="text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 data-[state=active]:text-sky-400 py-1.5 sm:py-2"><Users className="h-3 w-3 sm:h-4 sm:w-4" />Top Referrers</TabsTrigger>
             </TabsList>
             <TabsContent value="gold">
-              {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank.gold, currentUser?.gold_points !== undefined ? Number(currentUser.gold_points) : undefined)}
+              {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank?.gold, currentUser?.gold_points)}
             </TabsContent>
             <TabsContent value="scores">
-              {renderLeaderboardSection("Stake Builder Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank.scores, leaderboardData.user_rank.scoreValue)}
+              {renderLeaderboardSection("Stake Builder Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank?.scores, leaderboardData.user_rank?.scoreValue)}
             </TabsContent>
             <TabsContent value="referrals">
-              {renderLeaderboardSection("Top Referrers", leaderboardData.top_referrals, "Referrals", Users, leaderboardData.user_rank.referrals, currentUser?.referrals_made)}
+              {renderLeaderboardSection("Top Referrers", leaderboardData.top_referrals, "Referrals", Users, leaderboardData.user_rank?.referrals, currentUser?.referrals_made)}
             </TabsContent>
           </Tabs>
-        )}
+        ) : null}
       </div>
     </AppShell>
   );
