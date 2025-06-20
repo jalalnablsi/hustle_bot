@@ -46,25 +46,23 @@ export default function WheelPage() {
   const { toast } = useToast();
 
   const handleAdsgramRewardClientSide = useCallback(() => {
-    toast({ title: 'Ad Watched!', description: 'Spin reward is being processed. Refreshing your data...', icon: <Gift className="text-primary" /> });
+    console.log("WheelPage: Adsgram onReward triggered.");
+    toast({ title: 'Ad Watched!', description: 'Spin reward is being processed. Your spin count will update shortly.', icon: <Gift className="text-primary" /> });
     setTimeout(() => { 
         fetchUserData(); 
-    }, 2500); 
-    setIsAdInProgress(false);
+    }, 3000); 
+    // isAdInProgress will be set to false by onClose
   }, [toast, fetchUserData]);
 
   const handleAdsgramErrorClientSide = useCallback(() => {
-    setIsAdInProgress(false);
+    console.log("WheelPage: Adsgram onError triggered.");
+    // isAdInProgress will be set to false by onClose
   }, []);
   
   const handleAdsgramCloseClientSide = useCallback(() => {
-    if (!isAdInProgress) return; // Only act if an ad was indeed in progress
-    // Check if a reward was triggered; if so, onReward handles setIsAdInProgress(false)
-    // This ensures if user closes ad early, we reset the state.
-    // A more robust way might involve a flag set by onReward.
-    // For now, this basic close handling should be okay.
+    console.log("WheelPage: Adsgram onClose triggered. Setting isAdInProgress to false.");
     setIsAdInProgress(false);
-  }, [isAdInProgress]);
+  }, []);
 
   const showAdsgramAdForSpin = useAdsgram({
     blockId: ADSGRAM_WHEEL_BLOCK_ID,
@@ -103,13 +101,14 @@ export default function WheelPage() {
          updateUserSession({
             gold_points: data.goldPoints,
             diamond_points: data.diamondPoints,
-            bonus_spins_available: data.initialFreeSpinUsedNow && initialFreeSpinIsActuallyAvailable ? currentBonusSpins : Math.max(0, currentBonusSpins - (initialFreeSpinIsActuallyAvailable ? 0 : 1) ),
+            bonus_spins_available: data.spinsLeft - (data.initialFreeSpinUsedNow ? 1 : 0) < 0 ? 0 : data.spinsLeft - (data.initialFreeSpinUsedNow ? 1 : 0) , // Adjust bonus spins correctly
             initial_free_spin_used: data.initialFreeSpinUsedNow || currentUser.initial_free_spin_used,
         });
         
         setIsWheelSpinningVisually(true);
         setTargetPrizeIndexForWheel(data.prizeIndex);
       } else {
+        // If API fails to return prizeIndex, or other errors, refresh user data to sync state
         await fetchUserData(); 
         setIsWheelSpinningVisually(false);
         setIsBackendProcessing(false);
@@ -120,13 +119,13 @@ export default function WheelPage() {
       toast({ title: 'Spin Error', description: (error as Error).message || 'Could not complete spin.', variant: 'destructive' });
       setIsBackendProcessing(false);
       setIsWheelSpinningVisually(false);
-      await fetchUserData(); 
+      await fetchUserData(); // Sync state on error
     }
   }, [currentUser, contextLoadingUser, isBackendProcessing, isWheelSpinningVisually, isAdInProgress, toast, fetchUserData, updateUserSession]);
 
   const handleSpinAnimationEnd = useCallback((wonPrizeData: { label: string; type: 'gold'|'diamonds'; value?: number; icon: React.ElementType}) => {
     setIsWheelSpinningVisually(false);
-    setIsBackendProcessing(false);
+    setIsBackendProcessing(false); // Ensure this is also reset
     lastWonPrizeRef.current = wonPrizeData;
 
     toast({
@@ -139,6 +138,7 @@ export default function WheelPage() {
       ),
       duration: 4000,
     });
+    // User data should have been updated by handleSpinAPI or fetchUserData after ad
   }, [toast]);
 
   const handleWatchAdButtonClick = async () => {
@@ -151,8 +151,9 @@ export default function WheelPage() {
       toast({ title: 'Ad Limit Reached', description: `You've watched the maximum ads for spins today (${adsWatched}/${dailyLimit}).`, variant: 'default' });
       return;
     }
-    setIsAdInProgress(true);
+    setIsAdInProgress(true); // Set ad in progress before showing
     await showAdsgramAdForSpin();
+    // isAdInProgress will be set to false by onClose callback of useAdsgram
   };
 
 
@@ -182,7 +183,8 @@ export default function WheelPage() {
   const initialFreeSpinIsAvailableForDisplay = !currentUser?.initial_free_spin_used;
   const spinsAvailableForDisplay = (initialFreeSpinIsAvailableForDisplay ? 1 : 0) + (currentUser?.bonus_spins_available || 0);
   const adsWatchedTodayForSpins = currentUser?.ad_spins_used_today_count || 0;
-  const dailyAdViewLimitForSpins = currentUser?.daily_ad_views_limit || 3; 
+  // Use daily_ad_views_limit for spins specifically if available, else general limit
+  const dailyAdViewLimitForSpins = currentUser?.daily_ad_views_limit || 3; // Example specific limit, adjust if a different DB field is used for wheel ads
 
   return (
     <AppShell>
@@ -254,7 +256,7 @@ export default function WheelPage() {
               disabled={contextLoadingUser || isBackendProcessing || isWheelSpinningVisually || isAdInProgress || adsWatchedTodayForSpins >= dailyAdViewLimitForSpins}
             >
                 {isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin"/> : <Tv className="mr-2 h-4 w-4 sm:h-5 sm:w-5" /> }
-                {isAdInProgress ? 'Loading Ad...' : `Watch Ad for Spin (${dailyAdViewLimitForSpins - adsWatchedTodayForSpins} left)`}
+                {isAdInProgress ? 'Loading Ad...' : `Watch Ad for Spin (${Math.max(0, dailyAdViewLimitForSpins - adsWatchedTodayForSpins)} left)`}
             </Button>
 
             <Link href="/referrals" passHref className="w-full max-w-xs">
