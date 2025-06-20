@@ -5,7 +5,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import type { AppUser } from '@/app/types';
 import { retrieveLaunchParams } from '@telegram-apps/sdk';
 import { useMiniApp } from '@telegram-apps/sdk-react';
-
 const LOCAL_STORAGE_USER_KEY = 'hustleSoulUserMinimal';
 
 interface UserContextType {
