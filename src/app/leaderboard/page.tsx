@@ -6,23 +6,14 @@ import { TopThreeItem } from "@/components/leaderboard/TopThreeItem";
 import { LeaderboardItem } from "@/components/leaderboard/LeaderboardItem";
 import { Trophy, Coins, Users, Star, Loader2, AlertTriangle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState, useCallback } from "react";
 import type { LeaderboardEntry as GenericLeaderboardEntry } from "@/app/types";
-import { useUser } from "@/contexts/UserContext";
-import { cn } from "@/lib/utils";
 
 interface ApiLeaderboardData {
   top_scores: GenericLeaderboardEntry[];
   top_gold: GenericLeaderboardEntry[];
   top_referrals: GenericLeaderboardEntry[];
-  user_rank: {
-    gold: number | null;
-    referrals: number | null;
-    scores: number | null;
-    scoreValue?: number | null;
-  } | null;
 }
 
 const rankTitles: Record<number, string> = {
@@ -31,14 +22,7 @@ const rankTitles: Record<number, string> = {
   3: "The Vanguard",
 };
 
-function formatUserRankDisplay(rank: number | undefined | null): string {
-  if (rank === undefined || rank === null || rank <= 0) return "N/A";
-  if (rank > 100) return "100+";
-  return rank.toString();
-}
-
 export default function LeaderboardPage() {
-  const { currentUser, loadingUser } = useUser();
   const [leaderboardData, setLeaderboardData] = useState<ApiLeaderboardData | null>(null);
   const [isLoadingApi, setIsLoadingApi] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -49,7 +33,7 @@ export default function LeaderboardPage() {
       rank: entry.rank || index + 1,
       points: Number(entry[pointField] || entry.points || entry.score || entry.count || 0),
       username: entry.username || `User ${entry.id?.slice(-4) || (Math.random() * 1000).toFixed(0)}`,
-      avatarUrl: entry.avatarUrl || `https://placehold.co/128x128/${entry.rank === 1 ? 'FFD700/000000' : entry.rank === 2 ? 'C0C0C0/000000' : entry.rank === 3 ? 'CD7F32/000000' : '667EEA/FFFFFF'}.png?text=${(entry.username || 'P').substring(0, 2).toUpperCase()}&font=roboto`,
+      avatarUrl: entry.avatarUrl || `https://placehold.co/128x128.png?text=${(entry.username || 'P').substring(0, 2).toUpperCase()}`,
       dataAiHint: "avatar person",
     }));
   }, []);
@@ -58,8 +42,6 @@ export default function LeaderboardPage() {
     setIsLoadingApi(true);
     setApiError(null);
     try {
-      // The API now works without a cookie for public data.
-      // The cookie is read on the backend to optionally add user_rank.
       const response = await fetch('/api/leaderboard');
       if (!response.ok) {
         const errData = await response.json().catch(() => ({ error: "Failed to parse error from server" }));
@@ -71,7 +53,6 @@ export default function LeaderboardPage() {
           top_gold: processEntries(apiResult.data.top_gold, 'points'),
           top_scores: processEntries(apiResult.data.top_scores, 'points'),
           top_referrals: processEntries(apiResult.data.top_referrals, 'points'),
-          user_rank: apiResult.data.user_rank || null,
         });
       } else {
         throw new Error(apiResult.error || 'Leaderboard data format incorrect.');
@@ -87,26 +68,12 @@ export default function LeaderboardPage() {
   useEffect(() => {
     fetchLeaderboard();
   }, [fetchLeaderboard]);
-
-  const UserRankDisplayCard = ({ category, rank, score }: { category: string; rank: number | null | undefined; score?: number | null | undefined}) => (
-    <Card className="bg-primary/10 border-primary/30 shadow-md my-2 sm:my-4 w-full max-w-xs mx-auto">
-      <CardHeader className="pb-2 pt-3 px-3 sm:px-4">
-        <CardTitle className="text-xs sm:text-sm font-semibold text-primary/90">Your Rank in {category}</CardTitle>
-      </CardHeader>
-      <CardContent className="px-3 sm:px-4 pb-3">
-        <p className="text-xl sm:text-2xl font-bold text-foreground">{formatUserRankDisplay(rank)}</p>
-        {(score !== undefined && score !== null && score > 0) && <p className="text-xs text-muted-foreground">Value: {Number(score).toLocaleString()}</p>}
-      </CardContent>
-    </Card>
-  );
-
+  
   const renderLeaderboardSection = (
     title: string,
     entries: GenericLeaderboardEntry[],
     pointSuffix: string,
     icon: React.ElementType,
-    userRankValue?: number | null,
-    userScoreValue?: number | null
   ) => {
     if (isLoadingApi && !leaderboardData) {
         return (
@@ -131,7 +98,6 @@ export default function LeaderboardPage() {
       return (
         <div className="text-center py-6 sm:py-8">
           <p className="text-muted-foreground mb-2 sm:mb-3">No data available for {title} yet.</p>
-          {currentUser && userRankValue !== undefined && <UserRankDisplayCard category={title} rank={userRankValue} score={userScoreValue} />}
         </div>
       );
     }
@@ -150,12 +116,6 @@ export default function LeaderboardPage() {
            <IconComponent className="mx-auto h-8 w-8 sm:h-10 sm:w-10 text-primary mb-1 sm:mb-2" />
            <h2 className="font-headline text-xl sm:text-2xl font-semibold text-foreground">{title}</h2>
         </div>
-
-        {currentUser && userRankValue !== undefined && (
-          <div className="mb-4 sm:mb-6">
-             <UserRankDisplayCard category={title} rank={userRankValue} score={userScoreValue} />
-          </div>
-        )}
 
         {topThree.length > 0 && (
           <div className="grid grid-cols-3 gap-2 xs:gap-3 sm:gap-4 md:gap-5 mb-6 sm:mb-10 items-end px-1 sm:px-0 relative">
@@ -185,16 +145,6 @@ export default function LeaderboardPage() {
     );
   };
 
-  if (loadingUser) {
-    return (
-      <AppShell>
-        <div className="flex justify-center items-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))]">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
       <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
@@ -206,7 +156,7 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        {(isLoadingApi && !leaderboardData) || (loadingUser && !leaderboardData) ? (
+        {isLoadingApi ? (
           <div className="flex justify-center items-center py-10 sm:py-20">
             <Loader2 className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-primary" />
           </div>
@@ -225,13 +175,13 @@ export default function LeaderboardPage() {
               <TabsTrigger value="referrals" className="text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 data-[state=active]:text-sky-400 py-1.5 sm:py-2"><Users className="h-3 w-3 sm:h-4 sm:w-4" />Top Referrers</TabsTrigger>
             </TabsList>
             <TabsContent value="gold">
-              {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins, leaderboardData.user_rank?.gold, currentUser?.gold_points)}
+              {renderLeaderboardSection("Top Gold Earners", leaderboardData.top_gold, "GOLD", Coins)}
             </TabsContent>
             <TabsContent value="scores">
-              {renderLeaderboardSection("Stake Builder Scores", leaderboardData.top_scores, "Points", Star, leaderboardData.user_rank?.scores, leaderboardData.user_rank?.scoreValue)}
+              {renderLeaderboardSection("Stake Builder Scores", leaderboardData.top_scores, "Points", Star)}
             </TabsContent>
             <TabsContent value="referrals">
-              {renderLeaderboardSection("Top Referrers", leaderboardData.top_referrals, "Referrals", Users, leaderboardData.user_rank?.referrals, currentUser?.referrals_made)}
+              {renderLeaderboardSection("Top Referrers", leaderboardData.top_referrals, "Referrals", Users)}
             </TabsContent>
           </Tabs>
         ) : null}
@@ -239,3 +189,5 @@ export default function LeaderboardPage() {
     </AppShell>
   );
 }
+
+    
