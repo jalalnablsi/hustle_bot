@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
         game_hearts: { 'stake-builder': 5 },
         last_heart_replenished: null,
         
-        referral_link: `https://t.me/HustleSouleBot/Start?start=${telegramId}`,
+        referral_link: `https://t.me/HustleSoulBot/Start?start=${telegramId}`,
         created_at: new Date().toISOString(),
         last_login: new Date().toISOString(),
       };
