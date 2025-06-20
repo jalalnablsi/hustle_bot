@@ -23,7 +23,7 @@ export default function DashboardPage() {
     );
   }
   
-  if (!currentUser) { 
+  if (telegramAuthError || !currentUser) { 
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
@@ -37,7 +37,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!currentUser && !loadingUser) {
+  if (!currentUser || !loadingUser) {
      return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
