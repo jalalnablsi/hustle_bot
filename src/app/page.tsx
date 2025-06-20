@@ -10,7 +10,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { Button } from '@/components/ui/button';
 
 export default function DashboardPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
+  const { currentUser, loadingUser, telegramAuthError } = useUser();
 
   if (loadingUser) { 
     return (
@@ -23,7 +23,7 @@ export default function DashboardPage() {
     );
   }
   
-  if (telegramAuthError || !currentUser) { 
+  if (telegramAuthError && !currentUser) { 
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
@@ -37,21 +37,20 @@ export default function DashboardPage() {
     );
   }
 
-  if (!currentUser || !loadingUser) {
+  if (!currentUser || !loadingUser || !telegramAuthError) { // Case: loading finished, no user, no specific error
      return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
             <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
             <h2 className="text-2xl font-semibold text-foreground mb-3">Welcome to HustleSoul!</h2>
             <p className="text-muted-foreground mb-6">Please launch the app through Telegram to access your profile and start earning.</p>
-            {/* Removed button that calls fetchUserData directly as it might cause issues if initData is the problem */}
             <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
         </div>
       </AppShell>
     );
   }
   
-  if (!currentUser) { // Fallback if somehow currentUser is still null
+  if (!currentUser) { // Fallback if somehow currentUser is still null after all checks
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
