@@ -25,7 +25,8 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.Adsgram) {
+    // This effect should only run once per blockId to initialize the controller
+    if (typeof window !== 'undefined' && window.Adsgram && !AdControllerRef.current) {
       try {
         const initOptions: AdsgramInitOptions = {
           blockId,
