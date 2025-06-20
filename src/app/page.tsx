@@ -25,7 +25,7 @@ export default function DashboardPage() {
   }
   
   // After loading, check for specific auth errors
-  if (telegramAuthError || !currentUser) { 
+  if (telegramAuthError && !currentUser) { 
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
@@ -59,7 +59,7 @@ export default function DashboardPage() {
       <div className="container mx-auto px-4 py-8 space-y-8">
         <div>
           <h1 className="font-headline text-3xl md:text-4xl font-bold text-foreground mb-2">
-            Welcome, {currentUser.first_name || 'Hustler'}!
+            Welcome, {currentUser?.first_name || 'Hustler'}!
           </h1>
           <p className="text-lg text-muted-foreground">
             Your hub for earning GOLD & DIAMOND tokens. Complete tasks, refer friends, and engage daily.
