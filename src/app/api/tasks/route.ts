@@ -1,82 +1,85 @@
-import { NextRequest } from 'next/server';
+
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function GET(req: NextRequest) {
   try {
-    const tgUserStr = req.cookies.get('tgUser')?.value;
+    const tgUserCookie = req.cookies.get('tgUser');
 
-    if (!tgUserStr) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Telegram ID required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+    if (!tgUserCookie || !tgUserCookie.value) {
+      return NextResponse.json({ success: false, error: 'Authentication cookie not found.' }, { status: 401 });
+    }
+    
+    let tgUser;
+    try {
+        tgUser = JSON.parse(tgUserCookie.value);
+    } catch (e) {
+        return NextResponse.json({ success: false, error: 'Invalid authentication cookie.' }, { status: 400 });
     }
 
-    const tgUser = JSON.parse(tgUserStr);
-    const telegramId = tgUser.id.toString();
+    if (!tgUser || !tgUser.id) {
+        return NextResponse.json({ success: false, error: 'Invalid user data in cookie.' }, { status: 400 });
+    }
+    
+    const userId = tgUser.id;
 
-    // 1. الحصول على بيانات المستخدم ← لا يمكن التلاعب
     const { data: user, error: fetchUserError } = await supabaseAdmin
       .from('users')
-      .select('*')
-      .eq('telegram_id', telegramId)
+      .select('id')
+      .eq('id', userId)
       .single();
 
     if (fetchUserError || !user) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'User not found.' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      console.error('API Tasks: User not found for ID:', userId, fetchUserError?.message);
+      return NextResponse.json({ success: false, error: 'User not found.' }, { status: 404 });
     }
 
-    // 2. جلب جميع المهام ← لا يمكن التلاعب
     const { data: tasks, error: fetchTasksError } = await supabaseAdmin
       .from('tasks')
       .select('*')
       .eq('is_active', true);
 
-    if (fetchTasksError) throw fetchTasksError;
+    if (fetchTasksError) {
+      console.error('API Tasks: Error fetching tasks table:', fetchTasksError.message);
+      throw fetchTasksError;
+    }
 
-    // 3. جلب المهام التي أكملها المستخدم ← لا يمكن التلاعب
     const { data: completedTasks, error: fetchCompletedTasksError } = await supabaseAdmin
       .from('user_completed_tasks')
       .select('task_id')
       .eq('user_id', user.id);
 
-    if (fetchCompletedTasksError) throw fetchCompletedTasksError;
+    if (fetchCompletedTasksError) {
+      console.error('API Tasks: Error fetching completed tasks:', fetchCompletedTasksError.message);
+      throw fetchCompletedTasksError;
+    }
 
-    const completedTaskIds = completedTasks.map(task => task.task_id);
+    const completedTaskIds = new Set(completedTasks.map(task => task.task_id));
 
-    // 4. تنسيق المهام ← لا يمكن التلاعب
     const formattedTasks = tasks.map((task: any) => ({
       id: task.id,
       title: task.title,
       description: task.description,
       reward: task.reward_amount,
-      rewardCurrency: task.reward_type.toUpperCase(),
-      actionText: task.input_placeholder,
+      rewardCurrency: task.reward_type?.toUpperCase() || 'GOLD',
+      actionText: task.input_placeholder || 'Go to Task',
       href: task.link,
-      icon: task.platform === 'twitter' ? 'Twitter' : 
-           task.platform === 'youtube' ? 'Youtube' :
-           task.platform === 'discord' ? 'MessageSquare' :
-           task.platform === 'telegram' ? 'Send' : 'Users',
-      isCompleted: completedTaskIds.includes(task.id),
+      platform: task.platform,
+      requires_user_input: task.requires_user_input,
+      input_placeholder: task.input_placeholder,
+      isCompleted: completedTaskIds.has(task.id),
     }));
 
-    return new Response(
-      JSON.stringify({
+    return NextResponse.json({
         success: true,
         tasks: formattedTasks,
         userId: user.id,
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
+    });
 
   } catch (error: any) {
-    console.error('Error fetching tasks:', error.message);
-    return new Response(
-      JSON.stringify({ success: false, error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    console.error('API Tasks: General error:', error.message, {stack: error.stack});
+    return NextResponse.json({ success: false, error: 'Internal server error while fetching tasks.' }, { status: 500 });
   }
 }
+
+    
