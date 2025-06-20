@@ -4,14 +4,20 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import type { AppUser } from '@/app/types';
 import crypto from 'node:crypto';
 
+// --- Constants for Rewards and Settings ---
 const WELCOME_BONUS_GOLD = 100;
 const WELCOME_BONUS_DIAMONDS = 1;
-const REFERRAL_BONUS_GOLD_FOR_REFERRED = 150;
-const REFERRAL_BONUS_SPINS_FOR_REFERRER = 1;
-const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200;
+const WELCOME_BONUS_SPINS = 1;
+const WELCOME_BONUS_HEARTS = 5;
+
+const REFERRAL_BONUS_GOLD_FOR_REFERRED = 150; // Bonus for the new user who was referred
+const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200; // Bonus for the user who made the referral
+const REFERRAL_BONUS_SPINS_FOR_REFERRER = 1; // Bonus for the user who made the referral
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_BOT_USERNAME ='HustleSoulBot';
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
+const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 interface ValidatedTelegramData {
   isValid: boolean;
@@ -105,17 +111,15 @@ export async function POST(req: NextRequest) {
     const validationResult = validateTelegramData(initDataString, TELEGRAM_BOT_TOKEN);
 
     if (!validationResult.isValid || !validationResult.userData) {
-      console.warn("Telegram data validation failed or user data missing. Result:", validationResult);
+      console.warn("Login API: Telegram data validation failed or user data missing.", validationResult);
       return NextResponse.json({ success: false, error: validationResult.error || 'Invalid Telegram data. Please relaunch from Telegram.' }, { status: 403 });
     }
 
     const tgUserData = validationResult.userData;
     const referrerTelegramId = validationResult.startParam;
     const telegramId = tgUserData.id.toString();
-    const firstName = tgUserData.first_name;
-    const lastName = tgUserData.last_name || null;
-    const username = tgUserData.username || null;
-    const photoUrl = tgUserData.photo_url || null;
+    
+    console.log(`Login API: Processing request for TG ID ${telegramId}. Received start_param (referrer TG ID): ${referrerTelegramId}`);
 
     const { data: user, error: fetchUserError } = await supabaseAdmin
       .from('users')
@@ -126,60 +130,58 @@ export async function POST(req: NextRequest) {
     let existingUser = user;
     let isNewUser = false;
     let referralBonusApplied = false;
-    let welcomeBonusGoldApplied = 0;
-    let welcomeBonusDiamondsApplied = 0;
-    let referralBonusGoldForReferredUser = 0;
 
     if (fetchUserError && fetchUserError.code === 'PGRST116') { // User not found, create new
       isNewUser = true;
-      welcomeBonusGoldApplied = WELCOME_BONUS_GOLD;
-      welcomeBonusDiamondsApplied = WELCOME_BONUS_DIAMONDS;
+      console.log(`Login API: New user detected with TG ID: ${telegramId}.`);
+      
+      let finalWelcomeBonusGold = WELCOME_BONUS_GOLD;
+      let referrerUserRecord: any = null; // Use `any` for flexibility with Supabase record
 
-      const newUserPayload = {
+      // --- Referral Logic ---
+      if (referrerTelegramId && referrerTelegramId !== telegramId) {
+        console.log(`Login API: Searching for referrer with TG ID: ${referrerTelegramId}`);
+        const { data: refUserRec, error: fetchRefError } = await supabaseAdmin
+          .from('users')
+          .select('*')
+          .eq('telegram_id', referrerTelegramId.toString())
+          .single();
+
+        if (!fetchRefError && refUserRec) {
+          referrerUserRecord = refUserRec;
+          finalWelcomeBonusGold += REFERRAL_BONUS_GOLD_FOR_REFERRED;
+          console.log(`Login API: Found referrer user with DB ID ${referrerUserRecord.id}. New user will get an extra ${REFERRAL_BONUS_GOLD_FOR_REFERRED} gold.`);
+        } else {
+          console.warn(`Login API: Referrer with TG ID ${referrerTelegramId} (from start_param) not found. No referral bonus will be applied.`, fetchRefError?.message);
+        }
+      }
+      // --- End Referral Logic ---
+
+      const newUserPayload: Partial<AppUser> = {
         telegram_id: telegramId,
-        first_name: firstName,
-        last_name: lastName,
-        username: username,
-        gold_points: welcomeBonusGoldApplied,
-        diamond_points: welcomeBonusDiamondsApplied,
+        first_name: tgUserData.first_name || '',
+        last_name: tgUserData.last_name || null,
+        username: tgUserData.username || null,
+        photo_url: tgUserData.photo_url || null,
+        gold_points: finalWelcomeBonusGold,
+        diamond_points: WELCOME_BONUS_DIAMONDS,
+        bonus_spins_available: WELCOME_BONUS_SPINS,
+        game_hearts: { 'stake-builder': WELCOME_BONUS_HEARTS },
+        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramId}`,
+        created_at: new Date().toISOString(),
+        last_login: new Date().toISOString(),
+        // Default values for other fields
         purple_gem_points: 0,
-        blue_gem_points: 0,
         referrals_made: 0,
         referral_gold_earned: 0,
         referral_diamond_earned: 0,
         initial_free_spin_used: false,
         ad_spins_used_today_count: 0,
         ad_views_today_count: 0,
-        bonus_spins_available: 1,
         daily_reward_streak: 0,
         last_daily_reward_claim_at: null,
         daily_ad_views_limit: 50,
-        game_hearts: { 'stake-builder': 5 },
-        last_heart_replenished: null,
-        
-        referral_link: `https://t.me/HustleSoulBot/Start?start=${telegramId}`,
-        created_at: new Date().toISOString(),
-        last_login: new Date().toISOString(),
       };
-
-      let referrerUserRecord: AppUser | null = null;
-      if (referrerTelegramId && referrerTelegramId !== telegramId) {
-        const { data: refUserRec, error: fetchRefError } = await supabaseAdmin
-          .from('users')
-          .select('*')
-          .eq('telegram_id', referrerTelegramId.toString())
-          .single();
-        if (!fetchRefError && refUserRec) {
-          referrerUserRecord = refUserRec as AppUser;
-        } else {
-          console.warn(`Referrer with TG ID ${referrerTelegramId} (from start_param) not found or error:`, fetchRefError?.message);
-        }
-      }
-
-      if (referrerUserRecord) {
-        newUserPayload.gold_points = (newUserPayload.gold_points || 0) + REFERRAL_BONUS_GOLD_FOR_REFERRED;
-        referralBonusGoldForReferredUser = REFERRAL_BONUS_GOLD_FOR_REFERRED;
-      }
 
       const { data: insertedUser, error: insertError } = await supabaseAdmin
         .from('users')
@@ -188,13 +190,17 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (insertError) {
-        console.error("Error inserting new user:", insertError.message, insertError);
+        console.error("Login API: Error inserting new user:", insertError);
         return NextResponse.json({ success: false, error: `Database error inserting user: ${insertError.message}`, details: insertError }, { status: 500 });
       }
+      
+      console.log(`Login API: New user successfully created with DB ID: ${insertedUser.id}`);
       existingUser = insertedUser;
 
+      // --- Apply Referrer Bonuses and Create Link if Referrer Was Found ---
       if (referrerUserRecord && insertedUser) {
-        await supabaseAdmin
+        console.log(`Login API: Applying referral bonuses to referrer ID: ${referrerUserRecord.id}`);
+        const { error: referrerUpdateError } = await supabaseAdmin
           .from('users')
           .update({
             gold_points: (Number(referrerUserRecord.gold_points) || 0) + REFERRAL_BONUS_GOLD_FOR_REFERRER,
@@ -203,41 +209,51 @@ export async function POST(req: NextRequest) {
             referral_gold_earned: (Number(referrerUserRecord.referral_gold_earned) || 0) + REFERRAL_BONUS_GOLD_FOR_REFERRER,
           })
           .eq('id', referrerUserRecord.id);
+        
+        if (referrerUpdateError) {
+            console.error(`Login API: FAILED to update referrer user ${referrerUserRecord.id}.`, referrerUpdateError);
+        } else {
+            console.log(`Login API: Successfully updated referrer user ${referrerUserRecord.id}.`);
+        }
 
-        await supabaseAdmin
+        const { error: referralInsertError } = await supabaseAdmin
           .from('referrals')
           .insert({
             referrer_id: referrerUserRecord.id,
             referred_id: insertedUser.id,
             status: 'active',
-            ad_views_count: 0,
-            rewards_collected: false,
-            last_rewarded_gold: 0,
-            last_rewarded_diamond: 0,
             created_at: new Date().toISOString(),
           });
+
+        if (referralInsertError) {
+             console.error(`Login API: FAILED to insert into referrals table for referrer ${referrerUserRecord.id} and referred ${insertedUser.id}.`, referralInsertError);
+        } else {
+            console.log(`Login API: Successfully created referral link between referrer ${referrerUserRecord.id} and referred ${insertedUser.id}.`);
+        }
         referralBonusApplied = true;
       }
+      // --- End Apply Referrer Bonuses ---
 
     } else if (fetchUserError) {
-      console.error("Error fetching existing user:", fetchUserError);
+      console.error("Login API: Error fetching existing user:", fetchUserError);
       return NextResponse.json({ success: false, error: `Database error fetching user: ${fetchUserError.message}` }, { status: 500 });
-    } else if (existingUser) {
+    } else if (existingUser) { // Existing user login
+      console.log(`Login API: Existing user login for TG ID: ${telegramId}, DB ID: ${existingUser.id}`);
       await supabaseAdmin
         .from('users')
         .update({
           last_login: new Date().toISOString(),
-          ...(username && username !== existingUser.username && { username }),
-          ...(firstName && firstName !== existingUser.first_name && { first_name: firstName }),
-          ...(lastName !== existingUser.last_name && { last_name: lastName }),
-          ...(photoUrl && photoUrl !== existingUser.photo_url && { photo_url: photoUrl }),
+          ...(tgUserData.username && tgUserData.username !== existingUser.username && { username: tgUserData.username }),
+          ...(tgUserData.first_name && tgUserData.first_name !== existingUser.first_name && { first_name: tgUserData.first_name }),
+          ...(tgUserData.last_name !== existingUser.last_name && { last_name: tgUserData.last_name }),
+          ...(tgUserData.photo_url && tgUserData.photo_url !== existingUser.photo_url && { photo_url: tgUserData.photo_url }),
         })
         .eq('id', existingUser.id);
     }
 
     if (!existingUser) {
-      console.error("Critical error: existingUser is null after create/fetch logic.");
-      return NextResponse.json({ success: false, error: 'Failed to establish user session after create/fetch.' }, { status: 500 });
+      console.error("Login API: Critical error - existingUser is null after create/fetch logic.");
+      return NextResponse.json({ success: false, error: 'Failed to establish user session.' }, { status: 500 });
     }
 
     const userForCookieAndResponse = {
@@ -253,20 +269,8 @@ export async function POST(req: NextRequest) {
       user: userForCookieAndResponse,
       isNewUser,
       referralBonusApplied,
+      message: isNewUser ? "User created successfully." : "User login successful.",
     };
-
-    if (isNewUser) {
-      responsePayload.message = "User created successfully.";
-      responsePayload.welcomeBonusGold = welcomeBonusGoldApplied;
-      responsePayload.welcomeBonusDiamonds = welcomeBonusDiamondsApplied;
-      if (referralBonusApplied) {
-        responsePayload.referralBonusGoldForReferred = referralBonusGoldForReferredUser;
-        responsePayload.referralBonusSpinsForReferrer = REFERRAL_BONUS_SPINS_FOR_REFERRER;
-        responsePayload.referralBonusGoldForReferrer = REFERRAL_BONUS_GOLD_FOR_REFERRER;
-      }
-    } else {
-      responsePayload.message = "User login successful.";
-    }
 
     const response = NextResponse.json(responsePayload, { status: 200 });
 
@@ -276,16 +280,16 @@ export async function POST(req: NextRequest) {
       {
         path: '/',
         httpOnly: true,
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-        secure: true, // MUST be true for SameSite=None
-        sameSite: 'none', // Critical for cross-site/iframe contexts
+        maxAge: COOKIE_MAX_AGE_SECONDS,
+        secure: true, 
+        sameSite: 'none',
       }
     );
 
     return response;
 
   } catch (error: any) {
-    console.error('Login API error:', error.message, error.stack, error);
-    return NextResponse.json({ success: false, error: 'Internal server error: ' + error.message, details: error.toString() }, { status: 500 });
+    console.error('Login API: General unhandled error:', error.message, error.stack, error);
+    return NextResponse.json({ success: false, error: 'Internal server error: ' + error.message }, { status: 500 });
   }
 }
