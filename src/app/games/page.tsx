@@ -52,7 +52,6 @@ export default function StakeBuilderGamePage() {
   const { toast } = useToast();
 
   const [gameState, setGameState] = useState<'loading_user_data' | 'initializing_game' | 'idle' | 'playing' | 'dropping' | 'gameover_attempt' | 'ad_viewing' | 'waiting_for_hearts'>('loading_user_data');
-  const [gameInitializationPending, setGameInitializationPending] = useState(false);
   const [isGameApiLoading, setIsGameApiLoading] = useState(false);
   const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
 
@@ -109,11 +108,15 @@ export default function StakeBuilderGamePage() {
   
   const handleResizeOrMount = useCallback(() => {
     if (gameAreaRef.current) {
-      const newWidth = gameAreaRef.current.clientWidth;
-      if (newWidth > 0 && newWidth !== gameAreaWidth) {
-        console.log("Game Area width set to:", newWidth);
-        setGameAreaWidth(newWidth);
-      }
+        requestAnimationFrame(() => {
+            if (gameAreaRef.current) {
+                const newWidth = gameAreaRef.current.clientWidth;
+                if (newWidth > 0 && newWidth !== gameAreaWidth) {
+                    console.log("Game Area width set to:", newWidth);
+                    setGameAreaWidth(newWidth);
+                }
+            }
+        });
     }
   }, [gameAreaWidth]);
 
@@ -213,8 +216,9 @@ export default function StakeBuilderGamePage() {
         else { setGameState('idle'); } 
         setIsGameApiLoading(false);
       } else {
-        if (data.remainingHearts && data.remainingHearts[GAME_TYPE_IDENTIFIER] !== undefined) {
-          setPooledHearts(data.remainingHearts[GAME_TYPE_IDENTIFIER]);
+        if (data.remainingHearts !== undefined) {
+          setPooledHearts(data.remainingHearts);
+          updateUserSession({ game_hearts: data.gameHearts });
         }
         initializeNewGameAttempt();
       }
@@ -223,7 +227,7 @@ export default function StakeBuilderGamePage() {
         setIsGameApiLoading(false);
         setGameState('idle');
     }
-  }, [currentUser?.id, pooledHearts, toast, gameState, isGameApiLoading, gameAreaWidth, GAME_TYPE_IDENTIFIER, initializeNewGameAttempt]);
+  }, [currentUser?.id, pooledHearts, toast, gameState, isGameApiLoading, gameAreaWidth, GAME_TYPE_IDENTIFIER, initializeNewGameAttempt, updateUserSession]);
 
   const continueCurrentAttempt = useCallback(() => {
     if (gameAreaWidth <= 0) {
@@ -380,7 +384,7 @@ export default function StakeBuilderGamePage() {
   const canWatchAdForPooledHeart = pooledHearts < MAX_POOLED_HEARTS && (currentUser?.ad_views_today_count || 0) < (currentUser?.daily_ad_views_limit || 50);
   
   const effectiveGameState = (contextLoadingUser || isInitialDataLoading) ? 'loading_user_data' : gameState;
-  const playButtonDisabled = pooledHearts <= 0 || isGameApiLoading || ['playing', 'ad_viewing', 'dropping', 'initializing_game'].includes(effectiveGameState) || gameAreaWidth <= 0 || gameInitializationPending || effectiveGameState === 'loading_user_data';
+  const playButtonDisabled = pooledHearts <= 0 || isGameApiLoading || ['playing', 'ad_viewing', 'dropping', 'initializing_game'].includes(effectiveGameState) || gameAreaWidth <= 0 || effectiveGameState === 'loading_user_data';
 
   const GameContent = () => {
     if (effectiveGameState === 'loading_user_data') {
