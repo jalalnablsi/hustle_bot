@@ -9,7 +9,7 @@ export interface UseAdsgramParams {
   blockId: string;
   onReward?: () => void;
   onError?: (result: ShowPromiseResult) => void;
-  onClose?: () => void; // Called when ad overlay is dismissed, regardless of outcome
+  onClose?: () => void; 
 }
 
 export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramParams): () => Promise<void> {
@@ -25,38 +25,36 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
   }, []);
 
   useEffect(() => {
-    // This effect should only run once per blockId to initialize the controller
-    if (typeof window !== 'undefined' && window.Adsgram && !AdControllerRef.current) {
+    if (typeof window !== 'undefined' && window.Adsgram && blockId && !AdControllerRef.current) {
       try {
-        const initOptions: AdsgramInitOptions = {
-          blockId,
-        };
-        console.log(`Adsgram: Initializing with blockId: ${blockId}`);
+        const initOptions: AdsgramInitOptions = { blockId };
+        console.log(`Adsgram: Initializing hook for blockId: ${blockId}`);
         AdControllerRef.current = window.Adsgram.init(initOptions);
         if (!AdControllerRef.current) {
-          console.warn(`Adsgram: Init returned undefined for blockId: ${blockId}.`);
+          console.warn(`Adsgram: window.Adsgram.init returned undefined for blockId: ${blockId}.`);
         } else {
-          console.log(`Adsgram: Successfully initialized for blockId: ${blockId}`);
+          console.log(`Adsgram: Hook successfully initialized for blockId: ${blockId}`);
         }
       } catch (error: any) {
-        console.error("Adsgram SDK initialization error:", error, "for blockId:", blockId);
+        console.error("Adsgram SDK initialization error in hook:", error, "for blockId:", blockId);
       }
     } else if (typeof window !== 'undefined' && !window.Adsgram) {
-        console.warn("Adsgram SDK (window.Adsgram) not found. Ensure the script is loaded.");
+        console.warn("Adsgram SDK (window.Adsgram) not found. Ensure the script is loaded before this hook runs.");
     }
   }, [blockId]);
 
   return useCallback(async () => {
     if (!isMountedRef.current) {
-      console.warn("useAdsgram: show attempted before component is fully mounted or after unmount.");
+      console.warn("useAdsgram: show ad attempted before component is fully mounted or after unmount.");
       return;
     }
 
     if (AdControllerRef.current) {
-      console.log(`Adsgram: Attempting to show ad for blockId: ${blockId}`);
+      console.log(`Adsgram: Attempting to show ad using controller for blockId: ${blockId}`);
       try {
+        // The promise resolves if ad is watched, or if interstitial is closed.
         await AdControllerRef.current.show();
-        console.log(`Adsgram: Ad shown and closed successfully (reward condition met) for blockId: ${blockId}`);
+        console.log(`Adsgram: Ad shown and closed (reward condition potentially met) for blockId: ${blockId}`);
         if (isMountedRef.current) {
           onReward?.();
         }
@@ -86,6 +84,7 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
             toast({ title: "No Ad Available", description: "Please try again in a moment.", variant: "default"});
         }
       } finally {
+        // This 'finally' block ensures onClose is called regardless of success or failure.
         if (isMountedRef.current) {
           console.log(`Adsgram: Ad flow finished (onClose) for blockId: ${blockId}`);
           onClose?.();
@@ -98,8 +97,10 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
       if (isMountedRef.current) {
         onError?.(notLoadedError);
         toast({ title: "Ads Not Ready", description: notReadyMsg, variant: "default" });
-        onClose?.();
+        onClose?.(); // Also call onClose here to reset any loading states.
       }
     }
   }, [blockId, onReward, onError, onClose, toast]);
 }
+
+    
