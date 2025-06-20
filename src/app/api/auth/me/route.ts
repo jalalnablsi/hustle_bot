@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const tgUserCookie = req.cookies.get('tgUser');
 
 
-    conole.log(tgUserCookie);
+    console.log(tgUserCookie);
     let tgUserFromCookie;
     try {
         tgUserFromCookie = JSON.parse(tgUserCookie);
