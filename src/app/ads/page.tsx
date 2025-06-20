@@ -149,7 +149,7 @@ export default function AdsPage() {
               <div className="text-center py-8">
                 {canWatchMoreAds ? (
                   <div className="flex flex-col items-center">
-                     <Image src="https://placehold.co/300x200.png?text=Ready+to+Watch%3F" alt="Ready to watch ad" width={300} height={200} data-ai-hint="advertisement placeholder" className="rounded-lg mb-4 shadow-md" />
+                     <Image src="https://placehold.co/300x200.png" alt="Ready to watch ad" width={300} height={200} data-ai-hint="advertisement placeholder" className="rounded-lg mb-4 shadow-md" />
                      <p className="text-muted-foreground mb-4">Click below to watch an ad from Adsgram.</p>
                   </div>
                 ) : (
