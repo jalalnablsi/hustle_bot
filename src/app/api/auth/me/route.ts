@@ -2,10 +2,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import type { AppUser } from '@/app/types';
-
+import { cookies } from 'next/headers'
 export async function GET(req: NextRequest) {
   try {
-    const tgUserCookie = req.cookies.tgUser;
+    const cookieStore = await cookies()
+    const tgUserCookie = cookieStore.get('tgUser');
 
     if (!tgUserCookie || !tgUserCookie.value) {
       console.warn('Auth me - cookie missing:', req.url);
