@@ -1,5 +1,7 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+
+const GAME_TYPE_STAKE_BUILDER = 'stake-builder';
 
 export async function POST(req: NextRequest) {
   try {
@@ -7,58 +9,65 @@ export async function POST(req: NextRequest) {
     const { userId, gameType } = body;
 
     if (!userId || !gameType) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Missing userId or gameType' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      return NextResponse.json(
+        { success: false, error: 'Missing userId or gameType' },
+        { status: 400 }
       );
     }
 
     const { data: user, error: fetchUserError } = await supabaseAdmin
       .from('users')
-      .select('*')
+      .select('id, game_hearts, last_heart_replenished')
       .eq('id', userId)
       .single();
 
-    if (fetchUserError) throw fetchUserError;
+    if (fetchUserError || !user) {
+        const errorMsg = fetchUserError ? fetchUserError.message : 'User not found.';
+        console.error(`Use-heart error: Could not fetch user ${userId}.`, errorMsg);
+        return NextResponse.json({ success: false, error: 'User not found.' }, { status: 404 });
+    }
 
-    // استخراج القلوب
-    let gameHearts = user.game_hearts || {};
-    const currentHeartCount = gameHearts[gameType] || 5;
+    // Safely access and parse game hearts
+    let gameHearts = user.game_hearts && typeof user.game_hearts === 'object' ? { ...(user.game_hearts as Record<string, number>) } : {};
+    const currentHeartCount = Number(gameHearts[gameType] || 0);
 
     if (currentHeartCount <= 0) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'No hearts available for this game' }),
-        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      return NextResponse.json(
+        { success: false, error: 'No hearts available for this game' },
+        { status: 403 }
       );
     }
 
-    // تقليل قلب واحد
+    // Decrement heart count
     gameHearts[gameType] = currentHeartCount - 1;
 
-    // إذا لم يكن هناك وقت سابق، نبدأ التجديد الأول
+    // If this is the first time hearts are used, set the initial replenish timer
     const lastReplenishTime = user.last_heart_replenished || new Date().toISOString();
 
-    await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from('users')
       .update({
         game_hearts: gameHearts,
-        last_heart_replenished: lastReplenishTime,
+        last_heart_replenished: lastReplenishTime, // Ensure this is set on first use
       })
       .eq('id', userId);
 
-    return new Response(
-      JSON.stringify({
+    if (updateError) {
+        console.error(`Use-heart error: Failed to update user ${userId} hearts.`, updateError);
+        return NextResponse.json({ success: false, error: 'Failed to update user hearts.' }, { status: 500 });
+    }
+
+    return NextResponse.json(
+      {
         success: true,
-        remainingHearts: gameHearts,
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+        remainingHearts: gameHearts[gameType],
+        gameHearts: gameHearts,
+      },
+      { status: 200 }
     );
 
   } catch (error: any) {
-    console.error('Error using heart:', error.message);
-    return new Response(
-      JSON.stringify({ success: false, error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    console.error('Error in /api/games/use-heart:', error.message, { stack: error.stack });
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
   }
 }
