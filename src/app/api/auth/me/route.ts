@@ -6,7 +6,7 @@ import type { AppUser } from '@/app/types';
 export async function GET(req: NextRequest) {
   try {
   
-    const tgUserCookie = req.cookies.get('tgUser');
+    const tgUserCookie = req.cookies.get('tgUser')?.value;
 
 
     console.log(tgUserCookie);
