@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Zap, Users, Gamepad2, ArrowRight, Tv, Trophy, ListChecks, Megaphone, ShoppingCart, Gift } from "lucide-react";
+import Image from 'next/image';
 
 const actions = [
   { title: "Spin the Wheel", description: "Try your luck for big prizes!", href: "/wheel", icon: Gift, color: "text-yellow-400" },
@@ -26,7 +27,7 @@ function AdBannerPlaceholder() {
         <CardContent>
           <div className="aspect-[16/3] sm:aspect-[16/2.5] md:aspect-[16/2] bg-muted/40 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-accent/30 p-4 text-center">
             <div className="mb-2">
-                <Image src="https://placehold.co/600x150.png?text=Exciting+News+Here!" alt="Promotional Banner" width={600} height={150} data-ai-hint="promotion announcement" className="rounded-md object-cover" />
+                <Image src="https://placehold.co/600x150.png" alt="Promotional Banner" width={600} height={150} data-ai-hint="promotion announcement" className="rounded-md object-cover" />
             </div>
             <p className="text-muted-foreground text-sm sm:text-base">
               Stay tuned for major updates, new game releases, and special HustleSoul events!
