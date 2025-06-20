@@ -11,7 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 
 export default function TasksPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, telegramAuthError } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [errorLoadingTasks, setErrorLoadingTasks] = useState<string | null>(null);
@@ -21,7 +21,7 @@ export default function TasksPage() {
     const loadTasks = async () => {
       if (!currentUser?.id) { // If no current user ID, don't attempt to load tasks
         setIsLoadingTasks(false);
-        if (!contextLoadingUser && !telegramAuthError) { // Only set error if auth process is done and no user
+        if (!contextLoadingUser || !telegramAuthError) { // Only set error if auth process is done and no user
             setErrorLoadingTasks("User not authenticated. Cannot load tasks.");
         }
         return;
@@ -122,7 +122,7 @@ export default function TasksPage() {
     );
   }
   
-  if (!currentUser && !contextLoadingUser && !telegramAuthError) {
+  if (!currentUser || !contextLoadingUser || !telegramAuthError) {
      return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
