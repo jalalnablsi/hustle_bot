@@ -11,7 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 
 export default function TasksPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
+  const { currentUser, loadingUser, telegramAuthError, fetchUserData } = useUser();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [errorLoadingTasks, setErrorLoadingTasks] = useState<string | null>(null);
@@ -19,10 +19,11 @@ export default function TasksPage() {
 
   useEffect(() => {
     const loadTasks = async () => {
-      if (!currentUser?.id) { // If no current user ID, don't attempt to load tasks
+      if (!currentUser?.id) {
         setIsLoadingTasks(false);
-        if (!contextLoadingUser || !telegramAuthError) { // Only set error if auth process is done and no user
-            setErrorLoadingTasks("User not authenticated. Cannot load tasks.");
+        // Don't set error if main context is still loading or has its own auth error
+        if (!loadingUser || !telegramAuthError) {
+          setErrorLoadingTasks("User not authenticated. Cannot load tasks.");
         }
         return;
       }
@@ -35,44 +36,33 @@ export default function TasksPage() {
         if (!data.success) {
           throw new Error(data.error || 'Could not load tasks from server.');
         }
-        setTasks(data.tasks.map((task: any) => ({
-            ...task,
-        })));
+        setTasks(data.tasks);
       } catch (error: any) {
         console.error('Error loading tasks:', error.message);
         setErrorLoadingTasks(error.message);
-        toast({ title: 'Error Loading Tasks', description: error.message, variant: 'destructive' });
       } finally {
         setIsLoadingTasks(false);
       }
     };
-
-    if (!contextLoadingUser) { // Only run if user context loading is complete
-        loadTasks();
+    
+    if (!loadingUser) {
+      loadTasks();
     }
-  }, [currentUser?.id, contextLoadingUser, telegramAuthError, toast]);
+  }, [currentUser?.id, loadingUser, telegramAuthError]);
 
   const handleCompleteTask = async (taskId: string, userInput?: string) => {
     if (!currentUser?.id) {
-        toast({ title: "Authentication Error", description: "User not logged in. Cannot complete task.", variant: "destructive"});
-        return Promise.resolve();
+        toast({ title: "Authentication Error", description: "User not logged in.", variant: "destructive"});
+        return;
     }
     const taskToComplete = tasks.find(t => t.id === taskId);
-    if (!taskToComplete || taskToComplete.isCompleted) return Promise.resolve();
+    if (!taskToComplete || taskToComplete.isCompleted) return;
 
     try {
-        const payload: { userId: string; taskId: string; userInput?: string } = {
-            userId: currentUser.id,
-            taskId,
-        };
-        if (userInput && (taskToComplete.requires_user_input || taskToComplete.platform?.toLowerCase() === 'twitter' || taskToComplete.platform?.toLowerCase() === 'telegram') ) {
-            payload.userInput = userInput;
-        }
-
         const res = await fetch('/api/tasks/complete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ userId: currentUser.id, taskId, userInput }),
         });
         const data = await res.json();
 
@@ -99,7 +89,7 @@ export default function TasksPage() {
   const totalTasks = tasks.length;
   const progressPercentage = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
 
-  if (contextLoadingUser) {
+  if (loadingUser) {
     return (
         <AppShell>
             <div className="flex justify-center items-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))]">
@@ -109,7 +99,7 @@ export default function TasksPage() {
     );
   }
 
-  if (telegramAuthError && !currentUser) {
+  if (telegramAuthError || !currentUser) {
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
@@ -122,7 +112,7 @@ export default function TasksPage() {
     );
   }
   
-  if (!currentUser || !contextLoadingUser || !telegramAuthError) {
+  if (!currentUser) {
      return (
       <AppShell>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
@@ -134,7 +124,6 @@ export default function TasksPage() {
       </AppShell>
     );
   }
-
 
   return (
     <AppShell>
@@ -148,7 +137,7 @@ export default function TasksPage() {
         <div className="mb-8 p-4 bg-card rounded-xl shadow-lg border border-border">
           <div className="flex justify-between items-center mb-1">
             <p className="text-sm font-medium text-foreground">Your Task Progress:</p>
-            <p className="text-sm font-bold text-primary">{completedCount} / {totalTasks}</p>
+            <p className="text-sm font-bold text-primary">{completedCount} / {totalTasks > 0 ? totalTasks : '...'}</p>
           </div>
           <Progress value={progressPercentage} className="w-full h-3 [&>div]:bg-gradient-to-r [&>div]:from-primary [&>div]:to-accent" />
           {completedCount === totalTasks && totalTasks > 0 && (
@@ -158,25 +147,22 @@ export default function TasksPage() {
           )}
         </div>
 
-        {isLoadingTasks && !errorLoadingTasks && (
+        {isLoadingTasks ? (
           <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
-        )}
-        {errorLoadingTasks && !isLoadingTasks && (
+        ) : errorLoadingTasks ? (
             <div className="text-center py-10 bg-destructive/10 border border-destructive rounded-lg p-6">
                 <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-3" />
                 <p className="text-destructive-foreground font-semibold text-lg">Failed to load tasks.</p>
                 <p className="text-destructive-foreground/80 text-sm">{errorLoadingTasks}</p>
-                 <Button onClick={() => {if (currentUser?.id) { setIsLoadingTasks(true); /* Re-trigger loadTasks by changing a dep or calling directly */ } }} variant="outline" className="mt-3">Try Again</Button>
+                 <Button onClick={() => { if (currentUser?.id) { loadTasks(); } }} variant="outline" className="mt-3">Try Again</Button>
           </div>
-        )}
-        {!isLoadingTasks && !errorLoadingTasks && tasks.length > 0 && (
+        ) : tasks.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {tasks.map((task) => (
               <TaskItem key={task.id} task={task} onComplete={handleCompleteTask} />
             ))}
           </div>
-        )}
-        {!isLoadingTasks && !errorLoadingTasks && tasks.length === 0 && (
+        ) : (
             <div className="text-center py-10">
                 <Info className="mx-auto h-12 w-12 text-muted-foreground mb-3"/>
                 <p className="text-muted-foreground text-lg">No active tasks available right now.</p>
