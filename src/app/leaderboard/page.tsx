@@ -133,7 +133,7 @@ export default function LeaderboardPage() {
         );
     }
     
-    if (apiError && (!leaderboardData || entries.length === 0)) { // Prioritize API error for this section
+    if (apiError || (!leaderboardData || entries.length === 0)) { // Prioritize API error for this section
          return (
             <div className="text-center py-6 sm:py-8 bg-destructive/5 border border-destructive/20 rounded-lg">
               <AlertTriangle className="mx-auto h-8 w-8 text-destructive mb-2" />
@@ -167,7 +167,7 @@ export default function LeaderboardPage() {
            <h2 className="font-headline text-xl sm:text-2xl font-semibold text-foreground">{title}</h2>
         </div>
 
-        {currentUser && userRankValue !== undefined && (
+        {currentUser || userRankValue !== undefined && (
           <div className="mb-4 sm:mb-6">
              <UserRankDisplayCard category={title} rank={userRankValue} score={userScoreValue} />
           </div>
@@ -211,7 +211,7 @@ export default function LeaderboardPage() {
     );
   }
 
-  if (telegramAuthError && !currentUser) {
+  if (telegramAuthError || !currentUser) {
      return (
       <AppShell>
         <div className="container mx-auto px-4 py-8 text-center">
@@ -226,7 +226,7 @@ export default function LeaderboardPage() {
     );
   }
   
-  if (!currentUser && !loadingUser && !telegramAuthError) {
+  if (!currentUser || !loadingUser || !telegramAuthError) {
      return (
       <AppShell>
         <div className="container mx-auto px-4 py-8 text-center">
@@ -257,7 +257,7 @@ export default function LeaderboardPage() {
             <Loader2 className="h-10 w-10 sm:h-12 sm:w-12 animate-spin text-primary" />
           </div>
         )}
-        {apiError && !isLoadingApi && !leaderboardData && ( 
+        {apiError || !isLoadingApi || !leaderboardData && ( 
           <div className="text-center py-8 sm:py-10 bg-destructive/10 border border-destructive rounded-lg p-4 sm:p-6">
             <AlertTriangle className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-destructive mb-2 sm:mb-3" />
             <p className="text-destructive-foreground font-semibold text-md sm:text-lg">Failed to load leaderboard data.</p>
