@@ -8,9 +8,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useUser } from '@/contexts/UserContext';
 import { Loader2, ListChecks, CheckCircle, AlertTriangle, Info, Coins, Gem } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 
 export default function TasksPage() {
-  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, telegramAuthError } = useUser();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [errorLoadingTasks, setErrorLoadingTasks] = useState<string | null>(null);
@@ -18,8 +19,11 @@ export default function TasksPage() {
 
   useEffect(() => {
     const loadTasks = async () => {
-      if (!currentUser?.id && !contextLoadingUser) {
+      if (!currentUser?.id) { // If no current user ID, don't attempt to load tasks
         setIsLoadingTasks(false);
+        if (!contextLoadingUser && !telegramAuthError) { // Only set error if auth process is done and no user
+            setErrorLoadingTasks("User not authenticated. Cannot load tasks.");
+        }
         return;
       }
       setIsLoadingTasks(true);
@@ -33,7 +37,6 @@ export default function TasksPage() {
         }
         setTasks(data.tasks.map((task: any) => ({
             ...task,
-            // platform is used directly by TaskItem to pick icon
         })));
       } catch (error: any) {
         console.error('Error loading tasks:', error.message);
@@ -43,15 +46,16 @@ export default function TasksPage() {
         setIsLoadingTasks(false);
       }
     };
-    if (!contextLoadingUser) {
+
+    if (!contextLoadingUser) { // Only run if user context loading is complete
         loadTasks();
     }
-  }, [currentUser?.id, contextLoadingUser, toast]);
+  }, [currentUser?.id, contextLoadingUser, telegramAuthError, toast]);
 
   const handleCompleteTask = async (taskId: string, userInput?: string) => {
     if (!currentUser?.id) {
-        toast({ title: "Error", description: "User not logged in.", variant: "destructive"});
-        return Promise.resolve(); // Return a resolved promise for type consistency
+        toast({ title: "Authentication Error", description: "User not logged in. Cannot complete task.", variant: "destructive"});
+        return Promise.resolve();
     }
     const taskToComplete = tasks.find(t => t.id === taskId);
     if (!taskToComplete || taskToComplete.isCompleted) return Promise.resolve();
@@ -84,7 +88,6 @@ export default function TasksPage() {
                 icon: data.rewardType === 'gold' ? <Coins className="h-6 w-6 text-yellow-500" /> : <Gem className="h-6 w-6 text-sky-400" />,
             });
         } else {
-            // This is where the error toast should be triggered
             toast({ title: "Task Completion Failed", description: data.error || 'Could not complete this task.', variant: "destructive" });
         }
     } catch (error: any) {
@@ -96,7 +99,7 @@ export default function TasksPage() {
   const totalTasks = tasks.length;
   const progressPercentage = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
 
-  if (contextLoadingUser || !currentUser) {
+  if (contextLoadingUser) {
     return (
         <AppShell>
             <div className="flex justify-center items-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))]">
@@ -105,6 +108,33 @@ export default function TasksPage() {
         </AppShell>
     );
   }
+
+  if (telegramAuthError && !currentUser) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
+            <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+            <h2 className="text-2xl font-semibold text-foreground mb-3">Authentication Error</h2>
+            <p className="text-muted-foreground mb-6">{telegramAuthError}</p>
+            <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
+        </div>
+      </AppShell>
+    );
+  }
+  
+  if (!currentUser && !contextLoadingUser && !telegramAuthError) {
+     return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--header-height)-var(--bottom-nav-height))] p-4 text-center">
+            <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
+            <h2 className="text-2xl font-semibold text-foreground mb-3">Access Denied</h2>
+            <p className="text-muted-foreground mb-6">Please launch the app via Telegram to view tasks.</p>
+            <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
+        </div>
+      </AppShell>
+    );
+  }
+
 
   return (
     <AppShell>
@@ -118,7 +148,7 @@ export default function TasksPage() {
         <div className="mb-8 p-4 bg-card rounded-xl shadow-lg border border-border">
           <div className="flex justify-between items-center mb-1">
             <p className="text-sm font-medium text-foreground">Your Task Progress:</p>
-            <p className="text-sm font-bold text-primary">{completedCount} / {totalTasks} Tasks</p>
+            <p className="text-sm font-bold text-primary">{completedCount} / {totalTasks}</p>
           </div>
           <Progress value={progressPercentage} className="w-full h-3 [&>div]:bg-gradient-to-r [&>div]:from-primary [&>div]:to-accent" />
           {completedCount === totalTasks && totalTasks > 0 && (
@@ -136,6 +166,7 @@ export default function TasksPage() {
                 <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-3" />
                 <p className="text-destructive-foreground font-semibold text-lg">Failed to load tasks.</p>
                 <p className="text-destructive-foreground/80 text-sm">{errorLoadingTasks}</p>
+                 <Button onClick={() => {if (currentUser?.id) { setIsLoadingTasks(true); /* Re-trigger loadTasks by changing a dep or calling directly */ } }} variant="outline" className="mt-3">Try Again</Button>
           </div>
         )}
         {!isLoadingTasks && !errorLoadingTasks && tasks.length > 0 && (
@@ -156,4 +187,3 @@ export default function TasksPage() {
     </AppShell>
   );
 }
-    
