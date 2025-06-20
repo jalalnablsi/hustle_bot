@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
           users!inner (
             username,
             telegram_id,
-            photo_url
+        
           )
         `)
         .eq('game_type', GAME_TYPE_IDENTIFIER)
