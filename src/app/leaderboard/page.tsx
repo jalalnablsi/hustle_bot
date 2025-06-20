@@ -27,7 +27,7 @@ interface ApiLeaderboardData {
 
 const rankTitles: Record<number, string> = {
   1: "The Sovereign",
-  2: "The High Lord/Lady",
+  2: "The High Lord",
   3: "The Vanguard",
 };
 
@@ -38,7 +38,7 @@ function formatUserRankDisplay(rank: number | undefined | null): string {
 }
 
 export default function LeaderboardPage() {
-  const { currentUser, loadingUser, telegramAuthError } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
   const [leaderboardData, setLeaderboardData] = useState<ApiLeaderboardData | null>(null);
   const [isLoadingApi, setIsLoadingApi] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
