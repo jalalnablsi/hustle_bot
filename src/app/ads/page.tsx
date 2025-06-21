@@ -35,19 +35,14 @@ export default function AdsPage() {
         ),
         duration: 4000,
     });
-    setAdViewCompletedServerProcessing(true); // Indicates server processing has been initiated by ad view
-    // The actual reward is handled by server-to-server callback.
-    // Refresh user data to reflect the new diamond count and ad views.
+    setAdViewCompletedServerProcessing(true); 
     setTimeout(() => { 
         fetchUserData();
-    }, 3000); // Delay to allow server-to-server callback to potentially complete
-    // isAdInProgress will be set to false by onClose
+    }, 3000); 
   }, [toast, fetchUserData]);
 
   const handleAdsgramErrorClientSide = useCallback(() => {
-    // Toast for error is already handled by useAdsgram hook for common cases like no_ad_available
     console.log("AdsPage: Adsgram onError triggered.");
-    // isAdInProgress will be set to false by onClose
   }, []);
   
   const handleAdsgramCloseClientSide = useCallback(() => {
@@ -76,15 +71,14 @@ export default function AdsPage() {
         return;
     }
     
-    setAdViewCompletedServerProcessing(false); // Reset for new attempt
+    setAdViewCompletedServerProcessing(false); 
     setIsAdInProgress(true);
     await showAdsgramAdForDiamond();
   };
 
   const handleWatchAnotherAdClick = () => {
     setAdViewCompletedServerProcessing(false);
-    // Optionally, directly trigger handleWatchAdClick if user can watch more
-    // For now, just resetting state allows user to click the main button again
+    handleWatchAdClick();
   };
 
   if (contextLoadingUser) {
@@ -164,7 +158,7 @@ export default function AdsPage() {
           </CardContent>
           <CardFooter>
             {(!adViewCompletedServerProcessing && canWatchMoreAds) && (
-              <Button onClick={handleWatchAdClick} className="w-full animate-pulse-glow" size="lg" disabled={!currentUser || contextLoadingUser || !canWatchMoreAds || isAdInProgress}>
+              <Button onClick={handleWatchAdClick} className="w-full" size="lg" disabled={!currentUser || contextLoadingUser || !canWatchMoreAds || isAdInProgress}>
                  {isAdInProgress ? <Loader2 className="mr-2 h-5 w-5 animate-spin"/> : <Tv className="mr-2 h-5 w-5" />} 
                  {isAdInProgress ? 'Loading Ad...' : 'Watch Ad via Adsgram'}
               </Button>
