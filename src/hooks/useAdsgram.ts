@@ -52,7 +52,6 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
     if (AdControllerRef.current) {
       console.log(`Adsgram: Attempting to show ad using controller for blockId: ${blockId}`);
       try {
-        // The promise resolves if ad is watched, or if interstitial is closed.
         await AdControllerRef.current.show();
         console.log(`Adsgram: Ad shown and closed (reward condition potentially met) for blockId: ${blockId}`);
         if (isMountedRef.current) {
@@ -84,7 +83,6 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
             toast({ title: "No Ad Available", description: "Please try again in a moment.", variant: "default"});
         }
       } finally {
-        // This 'finally' block ensures onClose is called regardless of success or failure.
         if (isMountedRef.current) {
           console.log(`Adsgram: Ad flow finished (onClose) for blockId: ${blockId}`);
           onClose?.();
@@ -97,10 +95,8 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
       if (isMountedRef.current) {
         onError?.(notLoadedError);
         toast({ title: "Ads Not Ready", description: notReadyMsg, variant: "default" });
-        onClose?.(); // Also call onClose here to reset any loading states.
+        onClose?.(); 
       }
     }
   }, [blockId, onReward, onError, onClose, toast]);
 }
-
-    
