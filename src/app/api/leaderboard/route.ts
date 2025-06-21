@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
       .select(`
         user_id,
         high_score,
-        users!inner (
+        users:user_high_scores_user_id_fkey (
           username,
           telegram_id,
         )
