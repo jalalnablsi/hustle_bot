@@ -23,6 +23,7 @@ export default function StakeBuilderGamePage() {
 
   const HEADER_HEIGHT_CSS_VAR = 'var(--header-height, 64px)';
   const BOTTOM_NAV_HEIGHT_CSS_VAR = 'var(--bottom-nav-height, 64px)';
+
   const GAME_AREA_WIDTH_BASE_INTERNAL = 300;
   const GAME_AREA_HEIGHT_MIN_INTERNAL = 400;
   const INITIAL_BLOCK_HEIGHT_INTERNAL = 20;
@@ -103,16 +104,22 @@ export default function StakeBuilderGamePage() {
   }, [currentUser, contextLoadingUser, fetchUserGameData, parseHeartCountFromUser]);
   
   useEffect(() => {
-    const handleResize = () => {
-      if (gameAreaRef.current) {
-        requestAnimationFrame(() => {
-          if (gameAreaRef.current) setGameAreaWidth(gameAreaRef.current.clientWidth);
-        });
+    const observer = new ResizeObserver(entries => {
+      if (entries[0]) {
+        const width = entries[0].contentRect.width;
+        if (width > 0) {
+            setGameAreaWidth(width);
+        }
       }
+    });
+
+    if (gameAreaRef.current) {
+      observer.observe(gameAreaRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
     };
-    window.addEventListener('resize', handleResize);
-    handleResize(); 
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const processAttemptOver = useCallback(async (scoreOverride?: number) => {
@@ -146,6 +153,7 @@ export default function StakeBuilderGamePage() {
 
   const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number) => {
     if (gameAreaWidth <= 0) {
+      console.error("spawnNewBlock called with gameAreaWidth <= 0. Aborting.");
       processAttemptOver(0);
       return;
     }
