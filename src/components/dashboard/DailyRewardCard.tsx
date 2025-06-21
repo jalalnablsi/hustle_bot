@@ -22,15 +22,24 @@ export function DailyRewardCard() {
   const { currentUser, loadingUser: contextLoadingUser, updateUserSession } = useUser();
   const { toast } = useToast();
 
-  const lastClaimDate = currentUser?.last_daily_reward_claim_at ? new Date(currentUser.last_daily_reward_claim_at) : null;
+  const getLocalStorageKey = () => `dailyRewardClaimed_${currentUser?.id}`;
   
-  const [isClaimed, setIsClaimed] = useState(() => hasClaimedToday(lastClaimDate));
+  const [isClaimed, setIsClaimed] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
   const [isClaiming, setIsClaiming] = useState(false);
 
   useEffect(() => {
-    setIsClaimed(hasClaimedToday(lastClaimDate));
-  }, [lastClaimDate]);
+    if (currentUser?.id) {
+        const key = getLocalStorageKey();
+        const lastClaimedStoredString = localStorage.getItem(key);
+        const lastClaimedStoredDate = lastClaimedStoredString ? new Date(lastClaimedStoredString) : null;
+        setIsClaimed(hasClaimedToday(lastClaimedStoredDate));
+    } else {
+        const lastClaimDateFromContext = currentUser?.last_daily_reward_claim_at ? new Date(currentUser.last_daily_reward_claim_at) : null;
+        setIsClaimed(hasClaimedToday(lastClaimDateFromContext));
+    }
+  }, [currentUser]);
+
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | undefined;
@@ -81,11 +90,15 @@ export function DailyRewardCard() {
       const data = await res.json();
 
       if (data.success) {
+        const claimedAtDate = new Date(data.claimedAt);
+        localStorage.setItem(getLocalStorageKey(), claimedAtDate.toISOString());
+
         updateUserSession({
           gold_points: data.goldPoints,
           daily_reward_streak: data.dailyRewardStreak,
           last_daily_reward_claim_at: data.claimedAt,
         });
+
         setIsClaimed(true);
         toast({
           title: 'Daily Reward Claimed!',
@@ -100,6 +113,7 @@ export function DailyRewardCard() {
         });
         if (data.error === 'Daily reward already claimed') {
             setIsClaimed(true); 
+            localStorage.setItem(getLocalStorageKey(), new Date().toISOString());
             if (data.claimedAt) {
                 updateUserSession({ last_daily_reward_claim_at: data.claimedAt });
             }
@@ -177,5 +191,3 @@ export function DailyRewardCard() {
     </Card>
   );
 }
-
-    
