@@ -86,6 +86,7 @@ function validateTelegramData(initDataString: string, botToken: string): Validat
   try {
     const userData = JSON.parse(decodeURIComponent(userParam));
     const startParam = params.get('start_param') || null;
+    console.log("Login API (validateTelegramData): Successfully parsed. start_param is:", startParam);
     return { isValid: true, userData, startParam };
   } catch (e) {
     console.error("Error parsing Telegram user data (JSON) from initData:", e);
@@ -162,7 +163,6 @@ export async function POST(req: NextRequest) {
         first_name: tgUserData.first_name || '',
         last_name: tgUserData.last_name || null,
         username: tgUserData.username || null,
-
         gold_points: finalWelcomeBonusGold,
         diamond_points: WELCOME_BONUS_DIAMONDS,
         bonus_spins_available: WELCOME_BONUS_SPINS,
