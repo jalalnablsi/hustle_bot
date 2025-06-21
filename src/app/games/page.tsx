@@ -23,7 +23,6 @@ export default function StakeBuilderGamePage() {
 
   const HEADER_HEIGHT_CSS_VAR = 'var(--header-height, 64px)';
   const BOTTOM_NAV_HEIGHT_CSS_VAR = 'var(--bottom-nav-height, 64px)';
-
   const GAME_AREA_WIDTH_BASE_INTERNAL = 300;
   const GAME_AREA_HEIGHT_MIN_INTERNAL = 400;
   const INITIAL_BLOCK_HEIGHT_INTERNAL = 20;
