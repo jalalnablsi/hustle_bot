@@ -51,12 +51,10 @@ export default function WheelPage() {
     setTimeout(() => { 
         fetchUserData(); 
     }, 3000); 
-    // isAdInProgress will be set to false by onClose
   }, [toast, fetchUserData]);
 
   const handleAdsgramErrorClientSide = useCallback(() => {
     console.log("WheelPage: Adsgram onError triggered.");
-    // isAdInProgress will be set to false by onClose
   }, []);
   
   const handleAdsgramCloseClientSide = useCallback(() => {
@@ -108,7 +106,6 @@ export default function WheelPage() {
         setIsWheelSpinningVisually(true);
         setTargetPrizeIndexForWheel(data.prizeIndex);
       } else {
-        // If API fails to return prizeIndex, or other errors, refresh user data to sync state
         await fetchUserData(); 
         setIsWheelSpinningVisually(false);
         setIsBackendProcessing(false);
@@ -119,13 +116,13 @@ export default function WheelPage() {
       toast({ title: 'Spin Error', description: (error as Error).message || 'Could not complete spin.', variant: 'destructive' });
       setIsBackendProcessing(false);
       setIsWheelSpinningVisually(false);
-      await fetchUserData(); // Sync state on error
+      await fetchUserData();
     }
   }, [currentUser, contextLoadingUser, isBackendProcessing, isWheelSpinningVisually, isAdInProgress, toast, fetchUserData, updateUserSession]);
 
   const handleSpinAnimationEnd = useCallback((wonPrizeData: { label: string; type: 'gold'|'diamonds'; value?: number; icon: React.ElementType}) => {
     setIsWheelSpinningVisually(false);
-    setIsBackendProcessing(false); // Ensure this is also reset
+    setIsBackendProcessing(false); 
     lastWonPrizeRef.current = wonPrizeData;
 
     toast({
@@ -138,7 +135,6 @@ export default function WheelPage() {
       ),
       duration: 4000,
     });
-    // User data should have been updated by handleSpinAPI or fetchUserData after ad
   }, [toast]);
 
   const handleWatchAdButtonClick = async () => {
@@ -151,9 +147,8 @@ export default function WheelPage() {
       toast({ title: 'Ad Limit Reached', description: `You've watched the maximum ads for spins today (${adsWatched}/${dailyLimit}).`, variant: 'default' });
       return;
     }
-    setIsAdInProgress(true); // Set ad in progress before showing
+    setIsAdInProgress(true);
     await showAdsgramAdForSpin();
-    // isAdInProgress will be set to false by onClose callback of useAdsgram
   };
 
 
@@ -183,8 +178,7 @@ export default function WheelPage() {
   const initialFreeSpinIsAvailableForDisplay = !currentUser?.initial_free_spin_used;
   const spinsAvailableForDisplay = (initialFreeSpinIsAvailableForDisplay ? 1 : 0) + (currentUser?.bonus_spins_available || 0);
   const adsWatchedTodayForSpins = currentUser?.ad_spins_used_today_count || 0;
-  // Use daily_ad_views_limit for spins specifically if available, else general limit
-  const dailyAdViewLimitForSpins = currentUser?.daily_ad_views_limit || 3; // Example specific limit, adjust if a different DB field is used for wheel ads
+  const dailyAdViewLimitForSpins = currentUser?.daily_ad_views_limit || 3; 
 
   return (
     <AppShell>
