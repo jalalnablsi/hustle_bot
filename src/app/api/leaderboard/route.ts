@@ -7,18 +7,18 @@ export async function GET(req: NextRequest) {
     const GAME_TYPE_IDENTIFIER = 'stake-builder';
 
     // Fetch top 100 users based on high scores for 'stake-builder'
-    const { data: highScoresData, error: highScoresError } = await supabaseAdmin
+  const { data: highScoresData, error: scoreError } = await supabaseAdmin
       .from('user_high_scores')
       .select(`
         user_id,
-        high_score,
-        users:user_high_scores_user_id_fkey (
+        score,
+        users!inner (
           username,
-          telegram_id,
+          telegram_id
         )
       `)
-      .eq('game_type', GAME_TYPE_IDENTIFIER)
-      .order('high_score', { ascending: false })
+      .eq('game_type', 'stake-builder')
+      .order('score', { ascending: false })
       .limit(100);
 
     if (highScoresError) {
