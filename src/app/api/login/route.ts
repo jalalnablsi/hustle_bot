@@ -15,7 +15,7 @@ const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200; // Bonus for the user who made the
 const REFERRAL_BONUS_SPINS_FOR_REFERRER = 1; // Bonus for the user who made the referral
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_BOT_USERNAME ='HustleSoulBot';
+const TELEGRAM_BOT_USERNAME = 'HustleSoulBot/Start';
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
 const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
@@ -157,12 +157,11 @@ export async function POST(req: NextRequest) {
       }
       // --- End Referral Logic ---
 
-      const newUserPayload: Partial<AppUser> = {
+      const newUserPayload = {
         telegram_id: telegramId,
         first_name: tgUserData.first_name || '',
         last_name: tgUserData.last_name || null,
         username: tgUserData.username || null,
-
         gold_points: finalWelcomeBonusGold,
         diamond_points: WELCOME_BONUS_DIAMONDS,
         bonus_spins_available: WELCOME_BONUS_SPINS,
@@ -170,17 +169,6 @@ export async function POST(req: NextRequest) {
         referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramId}`,
         created_at: new Date().toISOString(),
         last_login: new Date().toISOString(),
-        // Default values for other fields
-        purple_gem_points: 0,
-        referrals_made: 0,
-        referral_gold_earned: 0,
-        referral_diamond_earned: 0,
-        initial_free_spin_used: false,
-        ad_spins_used_today_count: 0,
-        ad_views_today_count: 0,
-        daily_reward_streak: 0,
-        last_daily_reward_claim_at: null,
-        daily_ad_views_limit: 50,
       };
 
       const { data: insertedUser, error: insertError } = await supabaseAdmin
@@ -282,7 +270,7 @@ export async function POST(req: NextRequest) {
         httpOnly: true,
         maxAge: COOKIE_MAX_AGE_SECONDS,
         secure: true, 
-        sameSite: 'none',
+        sameSite: 'None', // Use 'None' for cross-site contexts like Telegram iframe
       }
     );
 
