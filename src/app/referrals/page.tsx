@@ -31,6 +31,8 @@ interface ReferredUserSummary {
   }
 }
 
+const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'HustleSoulBot';
+
 export default function ReferralsPage() {
   const { toast } = useToast();
   const { currentUser, loadingUser: contextLoadingUser, updateUserSession } = useUser();
@@ -74,7 +76,7 @@ export default function ReferralsPage() {
   const fetchReferralDetailsAndCalculate = useCallback(async (userId: string, userTelegramId: string) => {
     setIsFetchingReferralDetails(true);
     try {
-      const referralLink = currentUser?.referral_link || `https://t.me/HustleSoulBot?start=${userTelegramId}`;
+      const referralLink = currentUser?.referral_link || `https://t.me/${TELEGRAM_BOT_USERNAME}/Start?start=${userTelegramId}`;
       setReferralCode(referralLink);
 
       const referralsResponse = await fetch(`/api/referrals/details?referrer_id=${userId}`);
@@ -308,5 +310,3 @@ export default function ReferralsPage() {
     </AppShell>
   );
 }
-
-    
