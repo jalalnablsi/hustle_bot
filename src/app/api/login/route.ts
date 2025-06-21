@@ -15,7 +15,7 @@ const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200; // Bonus for the user who made the
 const REFERRAL_BONUS_SPINS_FOR_REFERRER = 1; // Bonus for the user who made the referral
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_BOT_USERNAME = 'HustleSoulBot/Start';
+const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'HustleSoulBot';
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
 const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
@@ -162,11 +162,12 @@ export async function POST(req: NextRequest) {
         first_name: tgUserData.first_name || '',
         last_name: tgUserData.last_name || null,
         username: tgUserData.username || null,
+
         gold_points: finalWelcomeBonusGold,
         diamond_points: WELCOME_BONUS_DIAMONDS,
         bonus_spins_available: WELCOME_BONUS_SPINS,
         game_hearts: { 'stake-builder': WELCOME_BONUS_HEARTS },
-        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramId}`,
+        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}/Start?start=${telegramId}`,
         created_at: new Date().toISOString(),
         last_login: new Date().toISOString(),
       };
