@@ -161,7 +161,6 @@ export async function POST(req: NextRequest) {
         first_name: tgUserData.first_name || '',
         last_name: tgUserData.last_name || null,
         username: tgUserData.username || null,
-        photo_url: tgUserData.photo_url || null,
         gold_points: finalWelcomeBonusGold,
         diamond_points: WELCOME_BONUS_DIAMONDS,
         bonus_spins_available: WELCOME_BONUS_SPINS,
