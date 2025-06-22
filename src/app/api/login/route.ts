@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
       telegram_id: existingUser.telegram_id.toString(),
       first_name: existingUser.first_name,
       username: existingUser.username,
-      photo_url: existingUser.photo_url,
+
     };
 
     const responsePayload: any = {
