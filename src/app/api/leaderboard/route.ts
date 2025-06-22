@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // Fetch top 100 users based on referrals made
     const { data: topReferralUsers, error: topReferralError } = await supabaseAdmin
       .from('users')
-      .select('id, username, referrals_made, photo_url, telegram_id')
+      .select('id, username, referrals_made, telegram_id')
       .gt('referrals_made', 0)
       .order('referrals_made', { ascending: false })
       .limit(100);
@@ -63,13 +63,13 @@ export async function GET(req: NextRequest) {
           rank: index + 1,
           username: user.username || `User ${user.telegram_id?.slice(-4)}`,
           points: Number(user.gold_points).toFixed(0),
-          avatarUrl: user.photo_url,
+        
         })),
         top_referrals: (topReferralUsers || []).map((user: any, index: number) => ({
             rank: index + 1,
             username: user.username || `User ${user.telegram_id?.slice(-4)}`,
             points: user.referrals_made,
-            avatarUrl: user.photo_url,
+         
         })),
       },
     });
