@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
           .insert({
             referrer_id: referrerUserRecord.id,
             referred_id: insertedUser.id,
-            status: 'active',
+  
             created_at: new Date().toISOString(),
           });
 
