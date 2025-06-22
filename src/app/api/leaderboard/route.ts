@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     // Fetch top 100 users based on gold points
     const { data: topGoldUsers, error: topGoldError } = await supabaseAdmin
       .from('users')
-      .select('id, username, gold_points, telegram_id, photo_url')
+      .select('id, username, gold_points, telegram_id)
       .gt('gold_points', 0)
       .order('gold_points', { ascending: false })
       .limit(100);
