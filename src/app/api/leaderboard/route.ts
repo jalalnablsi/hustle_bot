@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
           rank: index + 1,
           username: entry.users?.username || `Player ${entry.user_id.slice(-4)}`,
           points: entry.high_score,
-          avatarUrl: entry.users?.photo_url,
+         
         })),
         top_gold: (topGoldUsers || []).map((user: any, index: number) => ({
           rank: index + 1,
