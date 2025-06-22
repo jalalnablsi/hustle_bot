@@ -54,6 +54,7 @@ export default function StakeBuilderGamePage() {
 
   const [gameState, setGameState] = useState<'loading_user_data' | 'initializing_game' | 'idle' | 'playing' | 'dropping' | 'gameover_attempt' | 'ad_viewing' | 'waiting_for_hearts'>('loading_user_data');
   const [isGameApiLoading, setIsGameApiLoading] = useState(false);
+  const [gameInitializationPending, setGameInitializationPending] = useState(false);
   
   const [currentAttemptGold, setCurrentAttemptGold] = useState(0);
   const [currentAttemptDiamonds, setCurrentAttemptDiamonds] = useState(0);
@@ -104,20 +105,25 @@ export default function StakeBuilderGamePage() {
   }, [currentUser, contextLoadingUser, fetchUserGameData, parseHeartCountFromUser]);
   
   useEffect(() => {
-    const observer = new ResizeObserver(entries => {
-      if (entries[0]) {
-        const width = entries[0].contentRect.width;
-        if (width > 0) {
-            setGameAreaWidth(width);
+    const measureGameArea = () => {
+        if (gameAreaRef.current) {
+            const width = gameAreaRef.current.clientWidth;
+            if (width > 0) {
+                setGameAreaWidth(width);
+            }
         }
-      }
-    });
+    };
+    
+    // Initial measurement after a short delay to allow for layout calculation
+    const timeoutId = setTimeout(measureGameArea, 50);
 
+    const observer = new ResizeObserver(measureGameArea);
     if (gameAreaRef.current) {
       observer.observe(gameAreaRef.current);
     }
 
     return () => {
+      clearTimeout(timeoutId);
       observer.disconnect();
     };
   }, []);
@@ -193,11 +199,6 @@ export default function StakeBuilderGamePage() {
     if (pooledHearts <= 0) { toast({ title: "No Hearts Left!", description: "Replenish hearts or watch an ad."}); return;}
     if (isGameApiLoading || ['playing', 'dropping', 'initializing_game'].includes(gameState)) return;
     
-    if (gameAreaWidth <= 0) {
-       toast({ title: "Game Area Not Ready", description: "Please wait a moment.", variant: "default" });
-       return;
-    }
-    
     setIsGameApiLoading(true);
     setGameState('initializing_game');
     try {
@@ -216,14 +217,29 @@ export default function StakeBuilderGamePage() {
           updateUserSession({ game_hearts: data.gameHearts });
           setPooledHearts(data.remainingHearts);
         }
-        initializeNewGameAttempt();
+        setGameInitializationPending(true);
       }
     } catch (error) { 
         toast({ title: 'Network Error', description:"Failed to start game.", variant: 'destructive' }); 
         setIsGameApiLoading(false);
         setGameState('idle');
     }
-  }, [currentUser?.id, pooledHearts, toast, gameState, isGameApiLoading, gameAreaWidth, GAME_TYPE_IDENTIFIER, initializeNewGameAttempt, updateUserSession]);
+  }, [currentUser?.id, pooledHearts, toast, gameState, isGameApiLoading, GAME_TYPE_IDENTIFIER, updateUserSession]);
+
+  useEffect(() => {
+    if (gameInitializationPending && gameAreaWidth > 0) {
+        setGameInitializationPending(false);
+        initializeNewGameAttempt();
+    } else if (gameInitializationPending && gameAreaWidth <= 0) {
+        // This case is a safeguard. The UI should prevent starting if area is not ready.
+        console.warn("Game initialization was pending but game area is not ready.");
+        toast({title: "Game Area Not Ready", description: "Please wait a moment and try again.", variant: "destructive"});
+        setGameInitializationPending(false);
+        setGameState('idle');
+        setIsGameApiLoading(false);
+    }
+  }, [gameInitializationPending, gameAreaWidth, initializeNewGameAttempt, toast]);
+
 
   const continueCurrentAttempt = useCallback(() => {
     if (gameAreaWidth <= 0) {
@@ -315,9 +331,10 @@ export default function StakeBuilderGamePage() {
   const handleAdsgramCloseForHeart = useCallback(() => { 
     setIsAdInProgress(false); 
     if (gameState === 'ad_viewing') {
-        setGameState(pooledHearts > 0 ? 'idle' : 'waiting_for_hearts');
+        const currentHearts = parseHeartCountFromUser(currentUser);
+        setGameState(currentHearts > 0 ? 'idle' : 'waiting_for_hearts');
     }
-  }, [gameState, pooledHearts]);
+  }, [gameState, currentUser, parseHeartCountFromUser]);
 
   const showAdsgramAdForHeart = useAdsgram({
     blockId: ADSGRAM_STAKE_HEART_BLOCK_ID,
