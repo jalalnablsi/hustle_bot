@@ -15,7 +15,7 @@ const REFERRAL_BONUS_GOLD_FOR_REFERRER = 200; // Bonus for the user who made the
 const REFERRAL_BONUS_SPINS_FOR_REFERRER = 1; // Bonus for the user who made the referral
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'HustleSoulBot';
+const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'HusleSoulBot';
 const AUTH_EXPIRATION_SECONDS = 24 * 60 * 60; // 24 hours
 const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
@@ -82,7 +82,6 @@ function validateTelegramData(initDataString: string, botToken: string): Validat
 
   try {
     const userData = JSON.parse(userParam);
-    // Use 'start_param' as Telegram sends it, not 'startapp'
     const startParam = params.get('start_param') || null; 
     console.log("Login API (validateTelegramData): Successfully parsed. start_param is:", startParam);
     return { isValid: true, userData, startParam };
@@ -165,8 +164,7 @@ export async function POST(req: NextRequest) {
         diamond_points: WELCOME_BONUS_DIAMONDS,
         bonus_spins_available: WELCOME_BONUS_SPINS,
         game_hearts: { 'stake-builder': WELCOME_BONUS_HEARTS },
-        // Use /Start for deep linking bots, startapp is for launching specific mini-apps
-        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramId}`,
+        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}/Start?startapp=${telegramId}`,
         created_at: new Date().toISOString(),
         last_login: new Date().toISOString(),
       };
@@ -234,7 +232,7 @@ export async function POST(req: NextRequest) {
           ...(tgUserData.username && tgUserData.username !== existingUser.username && { username: tgUserData.username }),
           ...(tgUserData.first_name && tgUserData.first_name !== existingUser.first_name && { first_name: tgUserData.first_name }),
           ...(tgUserData.last_name !== existingUser.last_name && { last_name: tgUserData.last_name }),
-         
+          ...(tgUserData.photo_url && tgUserData.photo_url !== existingUser.photo_url && { photo_url: tgUserData.photo_url }),
         })
         .eq('id', existingUser.id);
     }
@@ -249,7 +247,7 @@ export async function POST(req: NextRequest) {
       telegram_id: existingUser.telegram_id.toString(),
       first_name: existingUser.first_name,
       username: existingUser.username,
-
+  
     };
 
     const responsePayload: any = {
