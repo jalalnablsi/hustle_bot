@@ -26,6 +26,7 @@ interface ValidatedTelegramData {
   error?: string;
 }
 
+// More robust validation function
 function validateTelegramData(initDataString: string, botToken: string): ValidatedTelegramData {
   if (!initDataString) {
     return { isValid: false, error: "initDataString is empty or undefined." };
@@ -33,11 +34,12 @@ function validateTelegramData(initDataString: string, botToken: string): Validat
 
   const params = new URLSearchParams(initDataString);
   const hashFromTelegram = params.get('hash');
+  const userParam = params.get('user');
 
-  if (!hashFromTelegram) {
-    return { isValid: false, error: "Hash parameter missing in initData." };
+  if (!hashFromTelegram || !userParam) {
+    return { isValid: false, error: "Hash or user parameter missing in initData." };
   }
-
+  
   const dataToCheck: string[] = [];
   params.forEach((value, key) => {
     if (key !== 'hash') {
@@ -66,9 +68,9 @@ function validateTelegramData(initDataString: string, botToken: string): Validat
   }
 
   const authDateParam = params.get('auth_date');
-  if (!authDateParam) {
-    console.warn("Telegram data validation: auth_date missing.");
-    return { isValid: false, error: "Authentication date missing from initData." };
+  if (!authDateParam || isNaN(parseInt(authDateParam, 10))) {
+    console.warn("Telegram data validation: auth_date missing or invalid.");
+    return { isValid: false, error: "Authentication date missing or invalid from initData." };
   }
   const authDate = parseInt(authDateParam, 10);
   const now = Math.floor(Date.now() / 1000);
@@ -78,14 +80,10 @@ function validateTelegramData(initDataString: string, botToken: string): Validat
     return { isValid: false, error: "Authentication data has expired. Please relaunch the app." };
   }
 
-  const userParam = params.get('user');
-  if (!userParam) {
-    return { isValid: false, error: "User data object (user=...) missing in initData." };
-  }
-
   try {
-    const userData = JSON.parse(decodeURIComponent(userParam));
-    const startParam = params.get('start_param') || null;
+    const userData = JSON.parse(userParam);
+    // Use 'start_param' as Telegram sends it, not 'startapp'
+    const startParam = params.get('start_param') || null; 
     console.log("Login API (validateTelegramData): Successfully parsed. start_param is:", startParam);
     return { isValid: true, userData, startParam };
   } catch (e) {
@@ -137,7 +135,7 @@ export async function POST(req: NextRequest) {
       console.log(`Login API: New user detected with TG ID: ${telegramId}.`);
       
       let finalWelcomeBonusGold = WELCOME_BONUS_GOLD;
-      let referrerUserRecord: any = null; // Use `any` for flexibility with Supabase record
+      let referrerUserRecord: any = null;
 
       // --- Referral Logic ---
       if (referrerTelegramId && referrerTelegramId !== telegramId) {
@@ -163,11 +161,13 @@ export async function POST(req: NextRequest) {
         first_name: tgUserData.first_name || '',
         last_name: tgUserData.last_name || null,
         username: tgUserData.username || null,
+        photo_url: tgUserData.photo_url || null,
         gold_points: finalWelcomeBonusGold,
         diamond_points: WELCOME_BONUS_DIAMONDS,
         bonus_spins_available: WELCOME_BONUS_SPINS,
         game_hearts: { 'stake-builder': WELCOME_BONUS_HEARTS },
-        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}/Start?start=${telegramId}`,
+        // Use /Start for deep linking bots, startapp is for launching specific mini-apps
+        referral_link: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramId}`,
         created_at: new Date().toISOString(),
         last_login: new Date().toISOString(),
       };
@@ -271,7 +271,7 @@ export async function POST(req: NextRequest) {
         httpOnly: true,
         maxAge: COOKIE_MAX_AGE_SECONDS,
         secure: true, 
-        sameSite: 'None', // Use 'None' for cross-site contexts like Telegram iframe
+        sameSite: 'None',
       }
     );
 
