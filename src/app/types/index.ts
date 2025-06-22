@@ -8,11 +8,7 @@ export interface UserPaymentSettings {
   network?: 'polygon' | 'trc20';
 }
 
-export interface GameSpecificHeartState {
-  count: number;
-  nextRegen: string | null;
-}
-export type GameHearts = Record<string, number | GameSpecificHeartState>;
+export type GameHearts = Record<string, number>;
 
 
 export interface User {
@@ -85,7 +81,7 @@ export type Task = {
   dataAiHint?: string;
   requiresUserInputForVerification?: 'twitter_username' | 'telegram_username' | 'none';
   userInputPlaceholder?: string;
-  icon?: string; // Retained for TaskItem usage, but platform is preferred
+  icon?: string; 
 };
 
 export interface TrafficTask {
