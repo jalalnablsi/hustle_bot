@@ -234,7 +234,7 @@ export async function POST(req: NextRequest) {
           ...(tgUserData.username && tgUserData.username !== existingUser.username && { username: tgUserData.username }),
           ...(tgUserData.first_name && tgUserData.first_name !== existingUser.first_name && { first_name: tgUserData.first_name }),
           ...(tgUserData.last_name !== existingUser.last_name && { last_name: tgUserData.last_name }),
-          ...(tgUserData.photo_url && tgUserData.photo_url !== existingUser.photo_url && { photo_url: tgUserData.photo_url }),
+         
         })
         .eq('id', existingUser.id);
     }
