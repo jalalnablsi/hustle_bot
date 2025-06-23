@@ -13,7 +13,6 @@ export interface UseAdsgramParams {
 }
 
 export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramParams): () => Promise<void> {
-  const AdControllerRef = useRef<AdController | undefined>(undefined);
   const { toast } = useToast();
   const isMountedRef = useRef(false);
 
@@ -32,7 +31,7 @@ export function useAdsgram({ blockId, onReward, onError, onClose }: UseAdsgramPa
 
     if (typeof window !== 'undefined' && window.Adsgram && blockId) {
       try {
-        console.log(`useAdsgram Hook: Re-initializing for blockId: ${blockId} just before showing.`);
+        console.log(`useAdsgram Hook: Initializing for blockId: ${blockId} just before showing.`);
         const adController = window.Adsgram.init({ blockId });
 
         if (!adController) {
