@@ -134,8 +134,8 @@ export async function GET(req: NextRequest) {
         reward_amount: rewardAmount,
         purpose: purpose,
         viewed_at: now,
-        ad_platform: 'adsgram',
-        ad_block_id: blockId,
+       
+        ad_id: blockId,
       });
 
     if (logError) {
