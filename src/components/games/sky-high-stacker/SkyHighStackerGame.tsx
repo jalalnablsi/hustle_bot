@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Heart, Play, Tv, Gamepad2, Coins, Gem, Loader2, Award, Star, RefreshCw, Clock, MousePointerClick } from 'lucide-react';
+import { Heart, Play, Tv, Coins, Gem, Loader2, Award, RefreshCw, Clock, MousePointerClick } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/contexts/UserContext';
@@ -20,7 +20,6 @@ export function SkyHighStackerGame() {
   const GAME_TYPE_IDENTIFIER = 'stake-builder';
   const MAX_POOLED_HEARTS = 5;
 
-  const GAME_AREA_WIDTH_BASE = 300;
   const GAME_AREA_HEIGHT_MIN = 400;
   const INITIAL_BLOCK_HEIGHT = 20;
   const INITIAL_BASE_WIDTH = 100;
@@ -39,7 +38,7 @@ export function SkyHighStackerGame() {
   const { currentUser, loadingUser, updateUserSession, fetchUserData } = useUser();
   const { toast } = useToast();
 
-  const [gameState, setGameState] = useState<'loading' | 'idle' | 'playing' | 'dropping' | 'gameover'>('loading');
+  const [gameState, setGameState] = useState<'loading_user_data' | 'idle' | 'initializing_game' | 'playing' | 'dropping' | 'gameover'>('loading_user_data');
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [currentAttemptGold, setCurrentAttemptGold] = useState(0);
   const [currentAttemptDiamonds, setCurrentAttemptDiamonds] = useState(0);
@@ -77,25 +76,33 @@ export function SkyHighStackerGame() {
       setIsApiLoading(false);
     }
   }, [toast, GAME_TYPE_IDENTIFIER]);
+  
+  useEffect(() => {
+    const measureArea = () => {
+        if (gameAreaRef.current) {
+            // Use requestAnimationFrame to ensure layout has been calculated
+            requestAnimationFrame(() => {
+                if(gameAreaRef.current) {
+                    setGameAreaWidth(gameAreaRef.current.clientWidth);
+                }
+            });
+        }
+    };
+    measureArea();
+    window.addEventListener('resize', measureArea);
+    return () => window.removeEventListener('resize', measureArea);
+  }, []);
 
   useEffect(() => {
     if (!loadingUser && currentUser?.id) {
       setHearts(parseHeartCount(currentUser));
       fetchGameData(currentUser.id);
       setGameState('idle');
+    } else if (!loadingUser && !currentUser) {
+        setGameState('idle'); // Or an error state
     }
   }, [currentUser, loadingUser, fetchGameData, parseHeartCount]);
 
-  useEffect(() => {
-    const measureArea = () => {
-      if (gameAreaRef.current) {
-        setGameAreaWidth(gameAreaRef.current.clientWidth);
-      }
-    };
-    measureArea();
-    window.addEventListener('resize', measureArea);
-    return () => window.removeEventListener('resize', measureArea);
-  }, []);
 
   const processGameOver = useCallback(async () => {
     setGameState('gameover');
@@ -157,6 +164,13 @@ export function SkyHighStackerGame() {
 
   const startGame = useCallback(async () => {
     if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') return;
+    
+    if (gameAreaWidth <= 0) {
+        toast({ title: "Game Not Ready", description: "Game area is still preparing, please wait a moment.", variant: "default" });
+        return;
+    }
+
+    setGameState('initializing_game');
     setIsApiLoading(true);
     try {
       const res = await fetch('/api/games/use-heart', {
@@ -166,7 +180,7 @@ export function SkyHighStackerGame() {
       const data = await res.json();
       if (!data.success) {
         toast({ title: 'Could Not Start', description: data.error, variant: 'destructive' });
-        setIsApiLoading(false);
+        setGameState('idle');
       } else {
         updateUserSession({ game_hearts: data.gameHearts });
         setHearts(data.remainingHearts);
@@ -174,10 +188,11 @@ export function SkyHighStackerGame() {
       }
     } catch (error) {
       toast({ title: 'Network Error', variant: 'destructive' });
+      setGameState('idle');
     } finally {
       setIsApiLoading(false);
     }
-  }, [currentUser?.id, hearts, isApiLoading, gameState, toast, initializeNewAttempt, updateUserSession, GAME_TYPE_IDENTIFIER]);
+  }, [currentUser?.id, hearts, isApiLoading, gameState, toast, initializeNewAttempt, updateUserSession, GAME_TYPE_IDENTIFIER, gameAreaWidth]);
 
   const continueAttempt = useCallback(() => {
     if (stackedBlocks.length > 0) {
@@ -286,12 +301,16 @@ export function SkyHighStackerGame() {
     toast({ title: "Ad Watched!", description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400" /> Heart reward processing...</span> });
     setTimeout(() => { fetchUserData(); }, 3000); 
   }, [toast, fetchUserData]);
+  
+  const handleAdsgramClose = useCallback(() => {
+      setIsAdInProgress(false);
+  }, []);
 
   const showAdsgramAdForHeart = useAdsgram({
     blockId: ADSGRAM_STAKE_HEART_BLOCK_ID,
     onReward: handleAdsgramRewardForHeart,
-    onError: () => setIsAdInProgress(false),
-    onClose: () => setIsAdInProgress(false),
+    onError: handleAdsgramClose,
+    onClose: handleAdsgramClose,
   });
 
   const watchAdForHeart = async () => {
@@ -331,7 +350,8 @@ export function SkyHighStackerGame() {
         return;
     }
     const intervalId = setInterval(() => {
-        const nextReplenishTime = new Date(currentUser!.last_heart_replenished!).getTime() + THREE_HOURS_IN_MS;
+        const lastReplenish = new Date(currentUser!.last_heart_replenished!).getTime();
+        const nextReplenishTime = lastReplenish + THREE_HOURS_IN_MS;
         const diff = nextReplenishTime - Date.now();
         if (diff <= 0) {
             setReplenishTimeLeft('Ready!');
@@ -349,13 +369,14 @@ export function SkyHighStackerGame() {
   const canContinue = continuesUsed < MAX_DIAMOND_CONTINUES && (currentUser?.diamond_points ?? 0) >= DIAMONDS_TO_CONTINUE;
 
   const renderGameContent = () => {
-    if (gameState === 'loading') {
+    if (gameState === 'loading_user_data') {
       return <div className="flex flex-grow items-center justify-center"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
     }
-
-    if (gameState === 'playing' || gameState === 'dropping') {
+    
+    if (gameState === 'playing' || gameState === 'dropping' || gameState === 'initializing_game') {
       return (
         <div className="relative bg-black/40 border-2 border-primary/20 rounded-lg overflow-hidden shadow-2xl shadow-primary/30 w-full" style={{ height: `${GAME_AREA_HEIGHT_MIN}px`, width: `${gameAreaWidth}px` }} onClick={handleDropBlock} role="button">
+          {gameState === 'initializing_game' && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10"><Loader2 className="h-8 w-8 animate-spin" /></div>}
           <div style={{ transform: `translateY(${stackOffsetY}px)`, transition: 'transform 0.3s ease-out' }}>
             {stackedBlocks.map(b => <div key={b.id} className={cn("absolute rounded-sm border", b.isPerfect && "ring-2 ring-yellow-300", b.id === 'base' ? 'border-muted/50' : 'border-border/60')} style={{ left: b.x, top: b.y, width: b.width, height: INITIAL_BLOCK_HEIGHT, background: b.color }}/>)}
           </div>
@@ -372,7 +393,7 @@ export function SkyHighStackerGame() {
             <h2 className="text-2xl font-bold font-headline">Game Over!</h2>
             <p className="text-lg">Score: <span className="font-bold">{stackedBlocks.length > 0 ? stackedBlocks.length - 1 : 0}</span></p>
             {canContinue && <Button onClick={handleSpendDiamonds} disabled={isApiLoading} variant="outline" size="lg" className="w-full border-sky-400 text-sky-400 hover:bg-sky-400/10 mt-3">{isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Gem className="mr-2 h-5 w-5" />} Use {DIAMONDS_TO_CONTINUE}💎 to Continue</Button>}
-            <Button onClick={initializeNewAttempt} variant="default" size="lg" className="w-full mt-2">Play Again</Button>
+            <Button onClick={startGame} disabled={isApiLoading || hearts <= 0} variant="default" size="lg" className="w-full mt-2">{isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}Play Again</Button>
           </div>
         )}
         
@@ -380,8 +401,8 @@ export function SkyHighStackerGame() {
             <div className="w-full space-y-3">
                 <h1 className="text-3xl font-bold font-headline text-primary">Sky-High Stacker</h1>
                 <p className="text-muted-foreground">Stack the blocks perfectly to score higher!</p>
-                <Button onClick={startGame} disabled={isApiLoading || hearts <= 0} size="lg" className="w-full text-xl py-3">{isApiLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6" />}Play (-1 <Heart className="inline h-4 w-4 mx-1" />)</Button>
-                <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="w-full">{isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} Watch Ad for +1 <Heart className="inline h-4 w-4 mx-1" /></Button>
+                <Button onClick={startGame} disabled={isApiLoading || hearts <= 0} size="lg" className="w-full text-xl py-6 h-auto">{isApiLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6" />}Play (-1 <Heart className="inline h-4 w-4 mx-1 fill-current" />)</Button>
+                <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="w-full">{isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} Watch Ad for +1 <Heart className="inline h-4 w-4 mx-1 fill-current" /></Button>
                 <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="w-full"><Clock className="mr-2 h-4 w-4" />{replenishTimeLeft !== 'Ready!' ? `Next Heart: ${replenishTimeLeft}` : 'Replenish Hearts Now'}</Button>
             </div>
         )}
@@ -406,9 +427,10 @@ export function SkyHighStackerGame() {
             {renderGameContent()}
         </div>
 
-        {gameState === 'playing' && (
+        {(gameState === 'playing' || gameState === 'dropping') && (
             <p className="text-sm text-center text-foreground/80 py-1.5 flex items-center justify-center gap-1.5 z-20 bg-black/30 px-3 rounded-full absolute bottom-4 left-1/2 -translate-x-1/2"><MousePointerClick className="h-4 w-4" /> Tap or Press Space to Drop</p>
         )}
     </div>
   );
 }
+
