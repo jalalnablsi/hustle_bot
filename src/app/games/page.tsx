@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -79,10 +78,11 @@ export default function GamePage() {
     }
   }, [currentUser, loadingUser, parseHeartCount]);
 
-  // Effect to measure game area
+  // Effect to measure game area - This is crucial to prevent the game from starting before the div has dimensions.
   useEffect(() => {
     const measureArea = () => {
         if (gameAreaRef.current) {
+            // Using requestAnimationFrame ensures we get the dimensions after the browser has painted.
             requestAnimationFrame(() => {
                 if(gameAreaRef.current) {
                     setGameAreaSize({ width: gameAreaRef.current.clientWidth, height: gameAreaRef.current.clientHeight });
@@ -163,6 +163,7 @@ export default function GamePage() {
   const startGame = useCallback(async () => {
     if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') return;
     
+    // THIS IS THE CRITICAL FIX: Ensure the game area has been measured before starting.
     if (!gameAreaRef.current || gameAreaRef.current.clientWidth <= 0) {
         toast({ title: "Game Not Ready", description: "Game area is still preparing, please try again in a moment.", variant: "default" });
         return;
@@ -180,6 +181,7 @@ export default function GamePage() {
         toast({ title: 'Could Not Start', description: data.error, variant: 'destructive' });
         setGameState('idle');
       } else {
+        // Only initialize the game attempt AFTER successful heart deduction
         updateUserSession({ game_hearts: data.gameHearts });
         setHearts(data.remainingHearts);
         initializeNewAttempt();
@@ -198,6 +200,7 @@ export default function GamePage() {
       spawnNewBlock(topBlock.width, topBlock.y - stackOffsetY);
       setGameState('playing');
     } else {
+      // This is a fallback in case something went wrong
       initializeNewAttempt();
     }
   }, [stackedBlocks, spawnNewBlock, stackOffsetY, initializeNewAttempt]);
@@ -298,6 +301,7 @@ export default function GamePage() {
   
   const handleAdsgramRewardForHeart = useCallback(() => {
     toast({ title: "Ad Watched!", description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400" /> Heart reward processing...</span> });
+    // Fetch user data after a delay to allow the backend to process the reward
     setTimeout(() => { fetchUserData(); }, 3000); 
   }, [toast, fetchUserData]);
 
@@ -433,6 +437,8 @@ export default function GamePage() {
             </div>
         );
     }
+
+    // Fallback, should not be reached in normal flow
     return null;
   };
   
@@ -459,6 +465,7 @@ export default function GamePage() {
     
     return (
        <div ref={gameAreaRef} className="flex flex-col flex-grow items-center justify-between w-full bg-gradient-to-br from-slate-900 via-purple-950/80 to-slate-900 text-slate-100 p-2 overflow-hidden">
+        {/* Game Header */}
         <div className="w-full px-2 sm:px-4 py-2 bg-slate-900/90 backdrop-blur-sm shadow-md border-b border-primary/30 z-20 flex flex-wrap justify-between items-center gap-2">
             <div className="flex items-center space-x-1">
                 {Array.from({ length: MAX_POOLED_HEARTS }).map((_, i) => <Heart key={`life-${i}`} className={cn("h-6 w-6 transition-all", i < hearts ? "text-red-500 fill-red-500" : "text-slate-600 fill-slate-700")} />)}
@@ -470,10 +477,12 @@ export default function GamePage() {
             <p className="text-sm font-bold flex items-center gap-1.5"><Award className="h-5 w-5 text-yellow-400" />{highScore}</p>
         </div>
 
+        {/* Game Content Area */}
         <div className="flex flex-grow items-center justify-center w-full my-2">
             {renderGameContent()}
         </div>
 
+        {/* Drop Instruction */}
         {(gameState === 'playing' || gameState === 'dropping') && (
             <div className="text-sm text-center text-foreground/80 py-1.5 flex items-center justify-center gap-1.5 z-20 bg-black/30 px-3 rounded-full absolute bottom-4 left-1/2 -translate-x-1/2">
                 <MousePointerClick className="h-4 w-4" /> Tap or Press Space to Drop
@@ -491,4 +500,3 @@ export default function GamePage() {
     </AppShell>
   );
 }
-
