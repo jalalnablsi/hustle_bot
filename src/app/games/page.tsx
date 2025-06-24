@@ -91,11 +91,9 @@ export default function GamePage() {
         }
     };
     measureArea();
-    window.addEventListener('resize', measureArea);
     const observer = new ResizeObserver(measureArea);
     if (gameAreaRef.current) observer.observe(gameAreaRef.current);
     return () => {
-      window.removeEventListener('resize', measureArea);
       if (gameAreaRef.current) observer.unobserve(gameAreaRef.current);
     }
   }, []);
@@ -375,7 +373,7 @@ export default function GamePage() {
     
     if (gameState === 'playing' || gameState === 'dropping' || gameState === 'initializing_game') {
       return (
-        <div className="relative bg-black/40 border-2 border-primary/20 rounded-lg overflow-hidden shadow-2xl shadow-primary/30 w-full h-full" onClick={handleDropBlock} role="button">
+        <div className="relative bg-black/40 border-2 border-primary/20 rounded-lg overflow-hidden shadow-2xl shadow-primary/30 w-full h-full" onClick={handleDropBlock} role="button" aria-label="Drop Block">
           {gameState === 'initializing_game' && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10"><Loader2 className="h-8 w-8 animate-spin" /></div>}
           <div style={{ transform: `translateY(${stackOffsetY}px)`, transition: 'transform 0.3s ease-out' }}>
             {stackedBlocks.map(b => <div key={b.id} className={cn("absolute rounded-sm border", b.isPerfect && "ring-2 ring-yellow-300", b.id === 'base' ? 'border-muted/50' : 'border-border/60')} style={{ left: b.x, top: b.y, width: b.width, height: INITIAL_BLOCK_HEIGHT, background: b.color }}/>)}
@@ -386,29 +384,53 @@ export default function GamePage() {
     }
 
     // --- Game Over or Idle Screens ---
-    return (
-      <div className="flex flex-col items-center justify-center text-center p-4 space-y-4 max-w-md w-full">
-        {gameState === 'gameover' && (
-          <div className="p-4 bg-card/80 rounded-lg shadow-xl border border-primary/30 w-full mb-3">
-            <Award size={48} className="text-yellow-400 mb-2 mx-auto" />
-            <h2 className="text-2xl font-bold font-headline">Game Over!</h2>
-            <p className="text-lg">Score: <span className="font-bold">{stackedBlocks.length > 0 ? stackedBlocks.length - 1 : 0}</span></p>
-            {canContinue && <Button onClick={handleSpendDiamonds} disabled={isApiLoading} variant="outline" size="lg" className="w-full border-sky-400 text-sky-400 hover:bg-sky-400/10 mt-3">{isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Gem className="mr-2 h-5 w-5" />} Use {DIAMONDS_TO_CONTINUE}💎 to Continue</Button>}
-            <Button onClick={() => setGameState('idle')} variant="default" size="lg" className="w-full mt-2">{isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}Back to Menu</Button>
-          </div>
-        )}
-        
-        { (gameState === 'idle') && (
-            <div className="w-full space-y-3">
-                <h1 className="text-3xl font-bold font-headline text-primary">Sky-High Stacker</h1>
-                <p className="text-muted-foreground">Stack the blocks perfectly to score higher!</p>
-                <Button onClick={startGame} disabled={isApiLoading || hearts <= 0 || gameAreaSize.width === 0} size="lg" className="w-full text-xl py-6 h-auto">{isApiLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6" />}Play (-1 <Heart className="inline h-4 w-4 mx-1 fill-current" />)</Button>
-                <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="w-full">{isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} Watch Ad for +1 <Heart className="inline h-4 w-4 mx-1 fill-current" /></Button>
-                <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="w-full"><Clock className="mr-2 h-4 w-4" />{replenishTimeLeft && replenishTimeLeft !== 'Ready!' ? `Next Heart in: ${replenishTimeLeft}` : 'Replenish Hearts Now'}</Button>
+    if (gameState === 'gameover') {
+        return (
+            <div className="flex flex-col items-center justify-center text-center p-4 space-y-4 max-w-md w-full">
+                <div className="p-6 bg-card/80 rounded-lg shadow-xl border border-primary/30 w-full animate-in fade-in-50">
+                    <Award size={48} className="text-yellow-400 mb-2 mx-auto" />
+                    <h2 className="text-3xl font-bold font-headline">Game Over!</h2>
+                    <p className="text-lg mb-4">Score: <span className="font-bold text-primary">{stackedBlocks.length > 0 ? stackedBlocks.length - 1 : 0}</span></p>
+                    {canContinue && (
+                        <Button onClick={handleSpendDiamonds} disabled={isApiLoading} size="lg" className="w-full bg-sky-500/20 border-sky-500 text-sky-400 hover:bg-sky-500/30 hover:text-sky-300 border-2 mb-2">
+                            {isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Gem className="mr-2 h-5 w-5" />} 
+                            Continue (-{DIAMONDS_TO_CONTINUE}💎)
+                        </Button>
+                    )}
+                    <Button onClick={() => setGameState('idle')} variant="outline" size="lg" className="w-full">
+                        {isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}
+                        Back to Menu
+                    </Button>
+                </div>
             </div>
-        )}
-      </div>
-    );
+        );
+    }
+    
+    if (gameState === 'idle') {
+        return (
+            <div className="flex flex-col items-center justify-center text-center p-4 space-y-4 max-w-md w-full animate-in fade-in-50">
+                <h1 className="text-4xl font-bold font-headline text-primary filter drop-shadow-[0_2px_4px_hsl(var(--primary)/0.5)]">Sky-High Stacker</h1>
+                <p className="text-muted-foreground text-lg">Stack blocks perfectly to reach new heights!</p>
+                <div className="w-full space-y-3 pt-4">
+                    <Button onClick={startGame} disabled={isApiLoading || hearts <= 0 || gameAreaSize.width === 0} size="lg" className="w-full text-xl py-7 h-auto font-bold animate-pulse-glow">
+                        {isApiLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6 fill-current" />}
+                        Play (-1 <Heart className="inline h-5 w-5 mx-1 fill-current" />)
+                    </Button>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-12 text-base">
+                            {isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} 
+                            Get <Heart className="inline h-4 w-4 mx-1 fill-current" />
+                        </Button>
+                        <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="h-12 text-base">
+                            <Clock className="mr-2 h-4 w-4" />
+                            {replenishTimeLeft && replenishTimeLeft !== 'Ready!' ? replenishTimeLeft : 'Replenish'}
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    return null;
   };
   
   const renderContainer = () => {
