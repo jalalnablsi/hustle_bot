@@ -141,27 +141,30 @@ export default function GamePage() {
   }, [gameAreaSize.width, stackedBlocks.length]);
 
   const initializeNewAttempt = useCallback(() => {
-    if (gameAreaSize.width <= 0) {
-        toast({ title: "Game Area Error", description: "Could not initialize game area.", variant: "destructive" });
+    if (!gameAreaRef.current || gameAreaRef.current.clientWidth <= 0) {
+        toast({ title: "Game Area Error", description: "Could not initialize game area. Please wait a moment.", variant: "destructive" });
         setGameState('idle');
         return;
     }
+    const { clientWidth, clientHeight } = gameAreaRef.current;
+    
     setCurrentAttemptGold(0);
     setCurrentAttemptDiamonds(0);
     setConsecutivePerfects(0);
     setContinuesUsed(0);
     setStackOffsetY(0);
-    const baseBlock = { id: 'base', x: (gameAreaSize.width - INITIAL_BASE_WIDTH) / 2, y: gameAreaSize.height - INITIAL_BLOCK_HEIGHT, width: INITIAL_BASE_WIDTH, color: 'hsl(var(--muted))' };
+
+    const baseBlock = { id: 'base', x: (clientWidth - INITIAL_BASE_WIDTH) / 2, y: clientHeight - INITIAL_BLOCK_HEIGHT, width: INITIAL_BASE_WIDTH, color: 'hsl(var(--muted))' };
     setStackedBlocks([baseBlock]);
     spawnNewBlock(baseBlock.width, baseBlock.y);
     setGameState('playing');
-  }, [gameAreaSize.width, gameAreaSize.height, spawnNewBlock, toast]);
+  }, [spawnNewBlock, toast]);
 
   const startGame = useCallback(async () => {
     if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') return;
     
-    if (gameAreaSize.width <= 0) {
-        toast({ title: "Game Not Ready", description: "Game area is still preparing, please wait.", variant: "default" });
+    if (!gameAreaRef.current || gameAreaRef.current.clientWidth <= 0) {
+        toast({ title: "Game Not Ready", description: "Game area is still preparing, please try again in a moment.", variant: "default" });
         return;
     }
 
@@ -187,7 +190,7 @@ export default function GamePage() {
     } finally {
       setIsApiLoading(false);
     }
-  }, [currentUser?.id, hearts, isApiLoading, gameState, toast, initializeNewAttempt, updateUserSession, gameAreaSize.width]);
+  }, [currentUser?.id, hearts, isApiLoading, gameState, toast, initializeNewAttempt, updateUserSession]);
 
   const continueAttempt = useCallback(() => {
     if (stackedBlocks.length > 0) {
@@ -412,16 +415,16 @@ export default function GamePage() {
                 <h1 className="text-4xl font-bold font-headline text-primary filter drop-shadow-[0_2px_4px_hsl(var(--primary)/0.5)]">Sky-High Stacker</h1>
                 <p className="text-muted-foreground text-lg">Stack blocks perfectly to reach new heights!</p>
                 <div className="w-full space-y-3 pt-4">
-                    <Button onClick={startGame} disabled={isApiLoading || hearts <= 0 || gameAreaSize.width === 0} size="lg" className="w-full text-xl py-7 h-auto font-bold animate-pulse-glow">
+                    <Button onClick={startGame} disabled={isApiLoading || hearts <= 0} size="lg" className="w-full h-14 text-lg font-bold animate-pulse-glow">
                         {isApiLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6 fill-current" />}
                         Play (-1 <Heart className="inline h-5 w-5 mx-1 fill-current" />)
                     </Button>
                     <div className="grid grid-cols-2 gap-3">
-                        <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-12 text-base">
+                        <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-11">
                             {isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} 
                             Get <Heart className="inline h-4 w-4 mx-1 fill-current" />
                         </Button>
-                        <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="h-12 text-base">
+                        <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="h-11">
                             <Clock className="mr-2 h-4 w-4" />
                             {replenishTimeLeft && replenishTimeLeft !== 'Ready!' ? replenishTimeLeft : 'Replenish'}
                         </Button>
@@ -489,4 +492,3 @@ export default function GamePage() {
   );
 }
 
-    
