@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -40,6 +41,7 @@ export default function GamePage() {
 
   const [gameState, setGameState] = useState<'loading_user_data' | 'idle' | 'initializing_game' | 'playing' | 'dropping' | 'gameover'>('loading_user_data');
   const [isApiLoading, setIsApiLoading] = useState(false);
+  const [isGameAreaReady, setIsGameAreaReady] = useState(false);
   
   // Game attempt state
   const [currentAttemptGold, setCurrentAttemptGold] = useState(0);
@@ -78,23 +80,28 @@ export default function GamePage() {
     }
   }, [currentUser, loadingUser, parseHeartCount]);
 
-  // Effect to measure game area - This is crucial to prevent the game from starting before the div has dimensions.
+  // Effect to measure game area & prevent race conditions
   useEffect(() => {
     const measureArea = () => {
         if (gameAreaRef.current) {
-            // Using requestAnimationFrame ensures we get the dimensions after the browser has painted.
-            requestAnimationFrame(() => {
-                if(gameAreaRef.current) {
-                    setGameAreaSize({ width: gameAreaRef.current.clientWidth, height: gameAreaRef.current.clientHeight });
-                }
-            });
+            const { clientWidth, clientHeight } = gameAreaRef.current;
+            if (clientWidth > 0 && clientHeight > 0) {
+                setGameAreaSize({ width: clientWidth, height: clientHeight });
+                setIsGameAreaReady(true);
+            }
         }
     };
-    measureArea();
+
     const observer = new ResizeObserver(measureArea);
-    if (gameAreaRef.current) observer.observe(gameAreaRef.current);
+    const currentRef = gameAreaRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+      // Initial measure
+      requestAnimationFrame(measureArea);
+    }
+    
     return () => {
-      if (gameAreaRef.current) observer.unobserve(gameAreaRef.current);
+      if (currentRef) observer.unobserve(currentRef);
     }
   }, []);
 
@@ -102,8 +109,7 @@ export default function GamePage() {
     if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
     gameLoopRef.current = null;
     setCurrentBlock(null);
-    setGameState('gameover');
-
+    
     const finalScore = Math.max(0, stackedBlocks.length - 1);
     if (currentUser?.id && (finalScore > 0 || currentAttemptGold > 0 || currentAttemptDiamonds > 0)) {
       setIsApiLoading(true);
@@ -127,6 +133,8 @@ export default function GamePage() {
         setIsApiLoading(false);
       }
     }
+    // Transition to gameover state after API call (or if no score to submit)
+    setGameState('gameover');
   }, [currentUser, stackedBlocks.length, currentAttemptGold, currentAttemptDiamonds, updateUserSession, toast]);
 
   const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number) => {
@@ -141,12 +149,7 @@ export default function GamePage() {
   }, [gameAreaSize.width, stackedBlocks.length]);
 
   const initializeNewAttempt = useCallback(() => {
-    if (!gameAreaRef.current || gameAreaRef.current.clientWidth <= 0) {
-        toast({ title: "Game Area Error", description: "Could not initialize game area. Please wait a moment.", variant: "destructive" });
-        setGameState('idle');
-        return;
-    }
-    const { clientWidth, clientHeight } = gameAreaRef.current;
+    const { clientWidth, clientHeight } = gameAreaRef.current!;
     
     setCurrentAttemptGold(0);
     setCurrentAttemptDiamonds(0);
@@ -158,14 +161,13 @@ export default function GamePage() {
     setStackedBlocks([baseBlock]);
     spawnNewBlock(baseBlock.width, baseBlock.y);
     setGameState('playing');
-  }, [spawnNewBlock, toast]);
+  }, [spawnNewBlock]);
 
   const startGame = useCallback(async () => {
-    if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') return;
-    
-    // THIS IS THE CRITICAL FIX: Ensure the game area has been measured before starting.
-    if (!gameAreaRef.current || gameAreaRef.current.clientWidth <= 0) {
-        toast({ title: "Game Not Ready", description: "Game area is still preparing, please try again in a moment.", variant: "default" });
+    if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle' || !isGameAreaReady) {
+        if (!isGameAreaReady) {
+            toast({ title: "Game Not Ready", description: "Game area is still preparing, please try again in a moment.", variant: "default" });
+        }
         return;
     }
 
@@ -181,7 +183,6 @@ export default function GamePage() {
         toast({ title: 'Could Not Start', description: data.error, variant: 'destructive' });
         setGameState('idle');
       } else {
-        // Only initialize the game attempt AFTER successful heart deduction
         updateUserSession({ game_hearts: data.gameHearts });
         setHearts(data.remainingHearts);
         initializeNewAttempt();
@@ -192,7 +193,7 @@ export default function GamePage() {
     } finally {
       setIsApiLoading(false);
     }
-  }, [currentUser?.id, hearts, isApiLoading, gameState, toast, initializeNewAttempt, updateUserSession]);
+  }, [currentUser?.id, hearts, isApiLoading, gameState, toast, initializeNewAttempt, updateUserSession, isGameAreaReady]);
 
   const continueAttempt = useCallback(() => {
     if (stackedBlocks.length > 0) {
@@ -200,7 +201,6 @@ export default function GamePage() {
       spawnNewBlock(topBlock.width, topBlock.y - stackOffsetY);
       setGameState('playing');
     } else {
-      // This is a fallback in case something went wrong
       initializeNewAttempt();
     }
   }, [stackedBlocks, spawnNewBlock, stackOffsetY, initializeNewAttempt]);
@@ -248,8 +248,15 @@ export default function GamePage() {
     if (newBlock.y - stackOffsetY < gameAreaSize.height / 2.5) {
       setStackOffsetY(o => o + INITIAL_BLOCK_HEIGHT);
     }
-    spawnNewBlock(newBlockWidth, newBlockY - stackOffsetY);
-    setGameState('playing');
+    
+    // Use a timeout to allow the 'dropping' state to render before resuming play
+    setTimeout(() => {
+        if (gameLoopRef.current !== null) { // Check if game is still active
+            spawnNewBlock(newBlockWidth, newBlockY - stackOffsetY);
+            setGameState('playing');
+        }
+    }, 50);
+
   }, [gameState, currentBlock, stackedBlocks, consecutivePerfects, processGameOver, spawnNewBlock, stackOffsetY, toast, gameAreaSize.height]);
 
   const gameLoop = useCallback(() => {
@@ -301,7 +308,6 @@ export default function GamePage() {
   
   const handleAdsgramRewardForHeart = useCallback(() => {
     toast({ title: "Ad Watched!", description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400" /> Heart reward processing...</span> });
-    // Fetch user data after a delay to allow the backend to process the reward
     setTimeout(() => { fetchUserData(); }, 3000); 
   }, [toast, fetchUserData]);
 
@@ -374,7 +380,7 @@ export default function GamePage() {
   const canContinue = continuesUsed < MAX_DIAMOND_CONTINUES && (currentUser?.diamond_points ?? 0) >= DIAMONDS_TO_CONTINUE;
 
   const renderGameContent = () => {
-    if (gameState === 'loading_user_data' || gameAreaSize.width === 0) {
+    if (gameState === 'loading_user_data' || !isGameAreaReady) {
       return <div className="flex flex-grow items-center justify-center"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
     }
     
@@ -399,13 +405,13 @@ export default function GamePage() {
                     <h2 className="text-3xl font-bold font-headline">Game Over!</h2>
                     <p className="text-lg mb-4">Score: <span className="font-bold text-primary">{stackedBlocks.length > 0 ? stackedBlocks.length - 1 : 0}</span></p>
                     {canContinue && (
-                        <Button onClick={handleSpendDiamonds} disabled={isApiLoading} size="lg" className="w-full bg-sky-500/20 border-sky-500 text-sky-400 hover:bg-sky-500/30 hover:text-sky-300 border-2 mb-2">
-                            {isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Gem className="mr-2 h-5 w-5" />} 
+                        <Button onClick={handleSpendDiamonds} disabled={isApiLoading} className="w-full bg-sky-500/20 border-sky-500 text-sky-400 hover:bg-sky-500/30 hover:text-sky-300 border-2 mb-2">
+                            {isApiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gem className="mr-2 h-4 w-4" />} 
                             Continue (-{DIAMONDS_TO_CONTINUE}💎)
                         </Button>
                     )}
-                    <Button onClick={() => setGameState('idle')} variant="outline" size="lg" className="w-full">
-                        {isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}
+                    <Button onClick={() => setGameState('idle')} variant="outline" className="w-full">
+                        {isApiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                         Back to Menu
                     </Button>
                 </div>
@@ -418,17 +424,17 @@ export default function GamePage() {
             <div className="flex flex-col items-center justify-center text-center p-4 space-y-4 max-w-md w-full animate-in fade-in-50">
                 <h1 className="text-4xl font-bold font-headline text-primary filter drop-shadow-[0_2px_4px_hsl(var(--primary)/0.5)]">Sky-High Stacker</h1>
                 <p className="text-muted-foreground text-lg">Stack blocks perfectly to reach new heights!</p>
-                <div className="w-full space-y-3 pt-4">
-                    <Button onClick={startGame} disabled={isApiLoading || hearts <= 0} size="lg" className="w-full h-14 text-lg font-bold animate-pulse-glow">
-                        {isApiLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Play className="mr-3 h-6 w-6 fill-current" />}
-                        Play (-1 <Heart className="inline h-5 w-5 mx-1 fill-current" />)
+                <div className="w-full space-y-2 pt-4">
+                    <Button onClick={startGame} disabled={isApiLoading || hearts <= 0 || !isGameAreaReady} size="lg" className="w-full h-12 text-md font-bold animate-pulse-glow">
+                        {isApiLoading || !isGameAreaReady ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5 fill-current" />}
+                        {isGameAreaReady ? `Play (-1 Heart)` : `Initializing...`}
                     </Button>
-                    <div className="grid grid-cols-2 gap-3">
-                        <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-11">
+                    <div className="grid grid-cols-2 gap-2">
+                        <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-10">
                             {isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} 
                             Get <Heart className="inline h-4 w-4 mx-1 fill-current" />
                         </Button>
-                        <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="h-11">
+                        <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="h-10">
                             <Clock className="mr-2 h-4 w-4" />
                             {replenishTimeLeft && replenishTimeLeft !== 'Ready!' ? replenishTimeLeft : 'Replenish'}
                         </Button>
@@ -438,7 +444,6 @@ export default function GamePage() {
         );
     }
 
-    // Fallback, should not be reached in normal flow
     return null;
   };
   
@@ -464,7 +469,7 @@ export default function GamePage() {
     }
     
     return (
-       <div ref={gameAreaRef} className="flex flex-col flex-grow items-center justify-between w-full bg-gradient-to-br from-slate-900 via-purple-950/80 to-slate-900 text-slate-100 p-2 overflow-hidden">
+       <div className="flex flex-col flex-grow items-center justify-between w-full bg-gradient-to-br from-slate-900 via-purple-950/80 to-slate-900 text-slate-100 p-2 overflow-hidden">
         {/* Game Header */}
         <div className="w-full px-2 sm:px-4 py-2 bg-slate-900/90 backdrop-blur-sm shadow-md border-b border-primary/30 z-20 flex flex-wrap justify-between items-center gap-2">
             <div className="flex items-center space-x-1">
@@ -478,7 +483,7 @@ export default function GamePage() {
         </div>
 
         {/* Game Content Area */}
-        <div className="flex flex-grow items-center justify-center w-full my-2">
+        <div ref={gameAreaRef} className="flex flex-grow items-center justify-center w-full my-2">
             {renderGameContent()}
         </div>
 
