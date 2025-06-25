@@ -1,4 +1,3 @@
-
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Zap, Users, Gamepad2, ArrowRight, Tv, Trophy, ListChecks, Megaphone, ShoppingCart, Gift } from "lucide-react";
@@ -54,6 +53,13 @@ export function QuickActionGrid() {
                   <CardTitle className="font-headline text-md text-foreground group-hover:text-primary transition-colors">{action.title}</CardTitle>
                 </div>
               </CardHeader>
+                      {/* Ad Banner placeholder added to the end of the grid actions */}
+      <div className="mt-8"> {/* Add some margin before the banner */}
+        <AdBannerPlaceholder />
+      </div>
+    </div>
+  );
+}
               <CardContent className="flex-grow flex flex-col justify-between pt-2">
                 <p className="text-xs text-muted-foreground mb-3">{action.description}</p>
                 {!action.comingSoon && (
@@ -81,10 +87,4 @@ export function QuickActionGrid() {
           );
         })}
       </div>
-      {/* Ad Banner placeholder added to the end of the grid actions */}
-      <div className="mt-8"> {/* Add some margin before the banner */}
-        <AdBannerPlaceholder />
-      </div>
-    </div>
-  );
-}
+
