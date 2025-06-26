@@ -1,357 +1,397 @@
-
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AppShell } from "@/components/layout/AppShell";
-import { Button } from '@/components/ui/button';
-import { Heart, Play, Tv, Coins, Gem, Loader2, Award, RefreshCw, Clock, MousePointerClick, AlertTriangle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { RAPIER, init } from '@dimforge/rapier3d-compat';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Heart, Play, Coins, Gem, Award, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
+import { useStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/contexts/UserContext';
-import { useAdsgram } from '@/hooks/useAdsgram';
+import { AppShell } from '@/components/layout/AppShell';
+import { Button } from '@/components/ui/button';
 
-// --- Game Constants ---
 const GAME_TYPE_IDENTIFIER = 'stake-builder';
 const MAX_POOLED_HEARTS = 5;
-const INITIAL_BLOCK_HEIGHT = 20;
-const INITIAL_BASE_WIDTH = 100;
-const MIN_BLOCK_WIDTH = 10;
-const GOLD_PER_DROP = 1;
-const GOLD_PER_PERFECT_DROP = 5;
-const DIAMONDS_PER_3_PERFECTS = 0.5;
 const DIAMONDS_TO_CONTINUE = 1;
 const MAX_DIAMOND_CONTINUES = 5;
-const BLOCK_COLORS = ['hsl(var(--chart-1)/0.9)', 'hsl(var(--chart-2)/0.9)', 'hsl(var(--chart-3)/0.9)','hsl(var(--chart-4)/0.9)', 'hsl(var(--chart-5)/0.9)'];
-const SPEED_START = 2.0;
-const SPEED_INCREMENT = 0.05;
-const MAX_SPEED = 7.0;
-const PERFECT_DROP_THRESHOLD = 2.5;
-const THREE_HOURS_IN_MS = 3 * 60 * 60 * 1000;
-const ADSGRAM_STAKE_HEART_BLOCK_ID = process.env.NEXT_PUBLIC_ADSGRAM_BLOCK_ID_STAKE_HEART || 'default-stake-heart-block-id';
-const LOCAL_STORAGE_REPLENISH_KEY = 'hustleSoulHeartReplenish';
-
-
-interface StackedBlock {
-  id: string; x: number; y: number; width: number; color: string; isPerfect?: boolean;
-}
 
 export default function GamePage() {
-  const { currentUser, loadingUser, telegramAuthError, updateUserSession, fetchUserData } = useUser();
+  const { currentUser, telegramAuthError, updateUserSession, fetchUserData } = useUser();
   const { toast } = useToast();
-
-  const [gameState, setGameState] = useState<'loading_user_data' | 'idle' | 'playing' | 'dropping' | 'gameover'>('loading_user_data');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+  const [gameState, setGameState] = useState<'loading' | 'idle' | 'playing' | 'gameover'>('loading');
   const [isApiLoading, setIsApiLoading] = useState(false);
-  const [isGameAreaReady, setIsGameAreaReady] = useState(false);
-  
-  // Game attempt state
-  const [currentAttemptGold, setCurrentAttemptGold] = useState(0);
-  const [currentAttemptDiamonds, setCurrentAttemptDiamonds] = useState(0);
-  const [consecutivePerfects, setConsecutivePerfects] = useState(0);
-  const [continuesUsed, setContinuesUsed] = useState(0);
+  const [isAdInProgress, setIsAdInProgress] = useState(false);
 
-  // User persistent state
-  const [highScore, setHighScore] = useState(0);
-  const [hearts, setHearts] = useState(0);
-  const [replenishTimeLeft, setReplenishTimeLeft] = useState('');
+  // Game state
+  const {
+    score,
+    hearts,
+    highScore,
+    gold,
+    diamonds,
+    continuesUsed,
+    replenishTime,
+    setGameData,
+    addScore,
+    addGold,
+    addDiamonds,
+    useHeart,
+    useContinue
+  } = useStore();
 
-  // Game mechanics state
-  const [stackedBlocks, setStackedBlocks] = useState<StackedBlock[]>([]);
-  const [currentBlock, setCurrentBlock] = useState<{ x: number; y: number; width: number; color: string; direction: 1 | -1; speed: number } | null>(null);
-  const [stackOffsetY, setStackOffsetY] = useState(0);
-
-  const gameAreaRef = useRef<HTMLDivElement>(null);
-  const gameLoopRef = useRef<number | null>(null);
-  const [gameAreaSize, setGameAreaSize] = useState({ width: 0, height: 0 });
-  
-  const parseHeartCount = useCallback((user: typeof currentUser | null) => {
-    if (!user || !user.game_hearts) return 0;
-    const heartsData = user.game_hearts[GAME_TYPE_IDENTIFIER];
-    return typeof heartsData === 'number' ? Math.min(heartsData, MAX_POOLED_HEARTS) : 0;
-  }, []);
-
-  // Effect to set initial user data
+  // Initialize game
   useEffect(() => {
-    if (!loadingUser && currentUser?.id) {
-      setHearts(parseHeartCount(currentUser));
-      setHighScore(currentUser.stake_builder_high_score || 0);
-      setGameState('idle');
-    } else if (!loadingUser && !currentUser) {
-        setGameState('idle');
-    }
-  }, [currentUser, loadingUser, parseHeartCount]);
+    if (!currentUser) return;
 
-  // Effect to measure game area & prevent race conditions
-  useEffect(() => {
-    const measureArea = () => {
-        if (gameAreaRef.current) {
-            const { clientWidth, clientHeight } = gameAreaRef.current;
-            if (clientWidth > 0 && clientHeight > 0) {
-                setGameAreaSize({ width: clientWidth, height: clientHeight });
-                setIsGameAreaReady(true);
-            } else {
-                setIsGameAreaReady(false);
-            }
-        }
-    };
-
-    const observer = new ResizeObserver(measureArea);
-    const currentRef = gameAreaRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-      requestAnimationFrame(measureArea);
-    }
-    
-    return () => {
-      if (currentRef) observer.unobserve(currentRef);
-    }
-  }, []);
-
-  const processGameOver = useCallback(async () => {
-    if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
-    gameLoopRef.current = null;
-    setCurrentBlock(null);
-    
-    const finalScore = Math.max(0, stackedBlocks.length - 1);
-    if (currentUser?.id && (finalScore > 0 || currentAttemptGold > 0 || currentAttemptDiamonds > 0)) {
-      setIsApiLoading(true);
-      try {
-        const res = await fetch('/api/games/submit-score', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: currentUser.id, gameType: GAME_TYPE_IDENTIFIER, score: finalScore, goldEarned: currentAttemptGold, diamondEarned: currentAttemptDiamonds }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          updateUserSession({ gold_points: data.totalGold, diamond_points: data.totalDiamonds });
-          if (data.isHighScore) {
-            setHighScore(finalScore);
-            updateUserSession({ stake_builder_high_score: finalScore });
-            toast({ title: "New High Score!", description: `You reached ${finalScore} points!`, icon: <Award className="h-5 w-5 text-yellow-400" /> });
-          }
-        }
-      } catch (error) {
-        toast({ title: "Score Submission Failed", variant: "destructive" });
-      } finally {
-        setIsApiLoading(false);
-      }
-    }
-    setGameState('gameover');
-  }, [currentUser, stackedBlocks.length, currentAttemptGold, currentAttemptDiamonds, updateUserSession, toast]);
-
-  const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number) => {
-    if (gameAreaSize.width === 0) return; // Prevent spawning if area is not ready
-    const currentScore = Math.max(0, stackedBlocks.length - 1);
-    const speed = Math.min(SPEED_START + (currentScore * SPEED_INCREMENT), MAX_SPEED);
-    setCurrentBlock({
-      x: Math.random() < 0.5 ? 0 : gameAreaSize.width - currentTopWidth,
-      y: visualCurrentTopY - INITIAL_BLOCK_HEIGHT - 5,
-      width: currentTopWidth, color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length],
-      direction: 1, speed
+    setGameData({
+      hearts: Math.min(currentUser.game_hearts?.[GAME_TYPE_IDENTIFIER] || 0, MAX_POOLED_HEARTS),
+      highScore: currentUser.stake_builder_high_score || 0,
+      replenishTime: currentUser.last_heart_replenished || ''
     });
-  }, [gameAreaSize.width, stackedBlocks.length]);
 
-  const initializeNewAttempt = useCallback(() => {
-    // This function now assumes gameAreaRef.current is valid, as it's checked in startGame
-    const { clientWidth, clientHeight } = gameAreaRef.current!;
-    
-    setCurrentAttemptGold(0);
-    setCurrentAttemptDiamonds(0);
-    setConsecutivePerfects(0);
-    setContinuesUsed(0);
-    setStackOffsetY(0);
+    setGameState('idle');
+  }, [currentUser, setGameData]);
 
-    const baseBlock = { id: 'base', x: (clientWidth - INITIAL_BASE_WIDTH) / 2, y: clientHeight - INITIAL_BLOCK_HEIGHT, width: INITIAL_BASE_WIDTH, color: 'hsl(var(--muted))' };
-    setStackedBlocks([baseBlock]);
-    spawnNewBlock(baseBlock.width, baseBlock.y);
-    setGameState('playing');
-  }, [spawnNewBlock]);
-
-  const startGame = useCallback(async () => {
-    if (!isGameAreaReady || !gameAreaRef.current || gameAreaRef.current.clientWidth === 0) {
-      toast({ title: "Game is Initializing", description: "Please wait a moment and try again.", variant: "default" });
-      return; 
-    }
-    if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') {
-      if (hearts <= 0) toast({ title: "No Hearts Left!", description: "Watch an ad or wait for replenishment.", variant: "default" });
+  // Start game
+  const startGame = async () => {
+    if (hearts <= 0 || isApiLoading) {
+      toast({ title: "No Hearts Left", description: "Watch an ad or wait for replenishment" });
       return;
     }
 
     setIsApiLoading(true);
+    
     try {
       const res = await fetch('/api/games/use-heart', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, gameType: GAME_TYPE_IDENTIFIER }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser?.id, gameType: GAME_TYPE_IDENTIFIER })
       });
+      
       const data = await res.json();
-      if (!data.success) {
-        toast({ title: 'Could Not Start', description: data.error, variant: 'destructive' });
-        fetchUserData(); // Sync hearts if server rejected
-        setIsApiLoading(false); // Make sure to stop loading
-        return;
+      
+      if (data.success) {
+        updateUserSession({ game_hearts: data.gameHearts });
+        useHeart();
+        init3DGame();
+      } else {
+        toast({ title: "Failed to start", variant: "destructive" });
       }
-
-      updateUserSession({ game_hearts: data.gameHearts });
-      setHearts(data.remainingHearts);
-      // Now that heart is used, initialize the game state
-      initializeNewAttempt();
-
-    } catch (error: any) {
-      toast({ title: 'Network Error', description: error.message, variant: 'destructive' });
+    } catch (error) {
+      toast({ title: "Network Error", variant: "destructive" });
     } finally {
       setIsApiLoading(false);
     }
-  }, [currentUser?.id, hearts, isApiLoading, gameState, isGameAreaReady, toast, fetchUserData, initializeNewAttempt, updateUserSession]);
+  };
 
-  const continueAttempt = useCallback(() => {
-    if (stackedBlocks.length > 0) {
-      const topBlock = stackedBlocks[stackedBlocks.length - 1];
-      spawnNewBlock(topBlock.width, topBlock.y - stackOffsetY);
-      setGameState('playing');
-    } else {
-      // Fallback if something went wrong
-      initializeNewAttempt();
-    }
-  }, [stackedBlocks, spawnNewBlock, stackOffsetY, initializeNewAttempt]);
+  // 3D Game Initialization
+  const init3DGame = async () => {
+    if (!canvasRef.current) return;
 
-  const handleDropBlock = useCallback(() => {
-    if (gameState !== 'playing' || !currentBlock) return;
-    setGameState('dropping');
+    setGameState('playing');
     
-    const topStackBlock = stackedBlocks[stackedBlocks.length - 1];
-    const overlapStart = Math.max(currentBlock.x, topStackBlock.x);
-    const overlapEnd = Math.min(currentBlock.x + currentBlock.width, topStackBlock.x + topStackBlock.width);
-    const overlapWidth = Math.max(0, overlapEnd - overlapStart);
-
-    if (overlapWidth < MIN_BLOCK_WIDTH) {
-      processGameOver();
+    // Initialize physics
+    await init();
+    const RAPIER = await import('@dimforge/rapier3d-compat');
+    
+    // Setup Three.js scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111827);
+    
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 5, 10);
+    
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvasRef.current,
+      antialias: true,
+      alpha: true
+    });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    // Add lights
+    const ambientLight = new THREE.AmbientLight(0x404040);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(1, 1, 1);
+    scene.add(directionalLight);
+    
+    // Physics world
+    const gravity = new RAPIER.Vector3(0.0, -9.81, 0.0);
+    const world = new RAPIER.World(gravity);
+    
+    // Create ground
+    const groundSize = 10;
+    const groundHeight = 0.1;
+    const ground = new THREE.Mesh(
+      new THREE.BoxGeometry(groundSize, groundHeight, groundSize),
+      new THREE.MeshStandardMaterial({ color: 0x4b5563 })
+    );
+    ground.position.y = -groundHeight / 2;
+    scene.add(ground);
+    
+    // Create physics ground
+    const groundColliderDesc = RAPIER.ColliderDesc.cuboid(
+      groundSize / 2,
+      groundHeight / 2,
+      groundSize / 2
+    );
+    world.createCollider(groundColliderDesc);
+    
+    // Game variables
+    const blocks: THREE.Mesh[] = [];
+    let currentBlock: THREE.Mesh | null = null;
+    let blockSpeed = 0.05;
+    let direction = 1;
+    let perfectDrops = 0;
+    
+    // Create new block
+    const createBlock = (width = 2, height = 0.5, depth = 2) => {
+      const geometry = new THREE.BoxGeometry(width, height, depth);
+      const material = new THREE.MeshStandardMaterial({ 
+        color: new THREE.Color(
+          Math.random() * 0.5 + 0.5,
+          Math.random() * 0.5 + 0.5,
+          Math.random() * 0.5 + 0.5
+        ),
+        roughness: 0.3,
+        metalness: 0.1
+      });
+      
+      const block = new THREE.Mesh(geometry, material);
+      block.position.y = blocks.length * height;
+      block.position.x = -4 * direction;
+      scene.add(block);
+      
+      return block;
+    };
+    
+    // First block
+    currentBlock = createBlock();
+    blocks.push(currentBlock);
+    
+    // Animation loop
+    const animate = () => {
+      requestAnimationFrame(animate);
+      
+      // Update physics
+      world.step();
+      
+      // Move current block
+      if (currentBlock) {
+        currentBlock.position.x += blockSpeed * direction;
+        
+        if (currentBlock.position.x > 4 || currentBlock.position.x < -4) {
+          direction *= -1;
+        }
+      }
+      
+      renderer.render(scene, camera);
+    };
+    
+    animate();
+    
+    // Handle block drop
+    const dropBlock = () => {
+      if (!currentBlock || blocks.length < 1) return;
+      
+      const lastBlock = blocks[blocks.length - 1];
+      const xDiff = Math.abs(currentBlock.position.x - lastBlock.position.x);
+      const isPerfect = xDiff < 0.2;
+      
+      // Calculate overlap
+      const overlapX = Math.max(
+        lastBlock.position.x - lastBlock.scale.x / 2,
+        currentBlock.position.x - currentBlock.scale.x / 2
+      );
+      const overlapZ = Math.max(
+        lastBlock.position.z - lastBlock.scale.z / 2,
+        currentBlock.position.z - currentBlock.scale.z / 2
+      );
+      
+      const newWidth = Math.min(
+        lastBlock.scale.x - Math.abs(currentBlock.position.x - lastBlock.position.x),
+        currentBlock.scale.x
+      );
+      
+      const newDepth = Math.min(
+        lastBlock.scale.z - Math.abs(currentBlock.position.z - lastBlock.position.z),
+        currentBlock.scale.z
+      );
+      
+      // Check if game over
+      if (newWidth < 0.3 || newDepth < 0.3) {
+        endGame();
+        return;
+      }
+      
+      // Update score and rewards
+      addScore(1);
+      
+      if (isPerfect) {
+        perfectDrops++;
+        addGold(5);
+        
+        if (perfectDrops % 3 === 0) {
+          addDiamonds(0.5);
+          toast({
+            description: `3x Perfect! +0.5💎`,
+            duration: 1500
+          });
+        }
+      } else {
+        perfectDrops = 0;
+        addGold(1);
+      }
+      
+      // Create new block
+      currentBlock = createBlock(newWidth, 0.5, newDepth);
+      blocks.push(currentBlock);
+      
+      // Increase difficulty
+      blockSpeed += 0.005;
+    };
+    
+    // Handle window resize
+    const onResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+    
+    window.addEventListener('resize', onResize);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', onResize);
+      renderer.dispose();
+    };
+  };
+  
+  // End game
+  const endGame = async () => {
+    setGameState('gameover');
+    
+    if (!currentUser?.id) return;
+    
+    setIsApiLoading(true);
+    try {
+      const res = await fetch('/api/games/submit-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          gameType: GAME_TYPE_IDENTIFIER,
+          score,
+          goldEarned: gold,
+          diamondEarned: diamonds
+        })
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        updateUserSession({
+          gold_points: data.totalGold,
+          diamond_points: data.totalDiamonds,
+          ...(data.isHighScore && { stake_builder_high_score: score })
+        });
+        
+        if (data.isHighScore) {
+          toast({
+            title: "New High Score!",
+            description: `You reached ${score} points!`,
+            icon: <Award className="h-5 w-5 text-yellow-400" />
+          });
+        }
+      }
+    } catch (error) {
+      toast({ title: "Failed to submit score", variant: "destructive" });
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+  
+  // Continue game
+  const continueGame = async () => {
+    if (continuesUsed >= MAX_DIAMOND_CONTINUES) {
+      toast({ title: "Max continues used", variant: "destructive" });
       return;
     }
-
-    const xDiff = Math.abs(currentBlock.x - topStackBlock.x);
-    const isPerfect = xDiff < PERFECT_DROP_THRESHOLD;
-    let gainedGold = 0, gainedDiamonds = 0;
     
-    if (isPerfect) {
-      gainedGold = GOLD_PER_PERFECT_DROP;
-      const newConsecutive = consecutivePerfects + 1;
-      setConsecutivePerfects(newConsecutive);
-      if (newConsecutive >= 3 && newConsecutive % 3 === 0) {
-        gainedDiamonds = DIAMONDS_PER_3_PERFECTS;
-        toast({ description: <span className="flex items-center"><Gem className="h-4 w-4 mr-1 text-sky-400" /> 3x Perfect! +{gainedDiamonds.toFixed(2)}💎</span>, duration: 1500 });
-      }
-    } else {
-      gainedGold = GOLD_PER_DROP;
-      setConsecutivePerfects(0);
-    }
-
-    setCurrentAttemptGold(s => s + gainedGold);
-    setCurrentAttemptDiamonds(d => d + gainedDiamonds);
-
-    const newBlockWidth = isPerfect ? topStackBlock.width : overlapWidth;
-    const newBlockX = isPerfect ? topStackBlock.x : overlapStart;
-    const newBlockY = topStackBlock.y - INITIAL_BLOCK_HEIGHT;
-    const newBlock = { id: `b-${Date.now()}`, x: newBlockX, y: newBlockY, width: newBlockWidth, color: currentBlock.color, isPerfect };
-    setStackedBlocks(prev => [...prev, newBlock]);
-    
-    if (newBlock.y - stackOffsetY < gameAreaSize.height / 2.5) {
-      setStackOffsetY(o => o + INITIAL_BLOCK_HEIGHT);
-    }
-    
-    setTimeout(() => {
-        if (gameLoopRef.current !== null) {
-            spawnNewBlock(newBlockWidth, newBlockY - stackOffsetY);
-            setGameState('playing');
-        }
-    }, 50);
-
-  }, [gameState, currentBlock, stackedBlocks, consecutivePerfects, processGameOver, spawnNewBlock, stackOffsetY, toast, gameAreaSize.height]);
-
-  const gameLoop = useCallback(() => {
-    if (gameState !== 'playing' || !currentBlock) {
-      gameLoopRef.current = null; return;
-    }
-    setCurrentBlock(prev => {
-      if (!prev) return null;
-      let newX = prev.x + prev.direction * prev.speed;
-      let newDirection = prev.direction;
-      if (newX + prev.width > gameAreaSize.width) { newX = gameAreaSize.width - prev.width; newDirection = -1; }
-      else if (newX < 0) { newX = 0; newDirection = 1; }
-      return { ...prev, x: newX, direction: newDirection as (1 | -1) };
-    });
-    gameLoopRef.current = requestAnimationFrame(gameLoop);
-  }, [gameState, currentBlock, gameAreaSize.width]);
-
-  useEffect(() => {
-    if (gameState === 'playing' && !gameLoopRef.current) {
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
-    }
-    return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); gameLoopRef.current = null; }
-  }, [gameState, gameLoop]);
-
-  const handleSpendDiamonds = async () => {
-    if (!currentUser?.id || isApiLoading) return;
-    if ((currentUser.diamond_points ?? 0) < DIAMONDS_TO_CONTINUE) {
-      toast({ title: "Not Enough Diamonds", variant: "destructive" }); return;
-    }
     setIsApiLoading(true);
     try {
       const res = await fetch('/api/games/spend-diamonds-to-continue', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, diamondsToSpend: DIAMONDS_TO_CONTINUE })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser?.id,
+          diamondsToSpend: DIAMONDS_TO_CONTINUE
+        })
       });
+      
       const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      updateUserSession({ diamond_points: data.newDiamondBalance });
-      setContinuesUsed(c => c + 1);
-      continueAttempt();
-    } catch (error: any) {
-      toast({ title: "Failed to Continue", description: error.message, variant: "destructive" });
+      
+      if (data.success) {
+        updateUserSession({ diamond_points: data.newDiamondBalance });
+        useContinue();
+        init3DGame();
+      } else {
+        toast({ title: "Failed to continue", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Network Error", variant: "destructive" });
     } finally {
       setIsApiLoading(false);
     }
   };
-
-  const [isAdInProgress, setIsAdInProgress] = useState(false);
   
-  const handleAdsgramRewardForHeart = useCallback(() => {
-    toast({ title: "Ad Watched!", description: <span className="flex items-center"><Heart className="h-4 w-4 mr-1 text-red-400 fill-red-400" /> Heart reward processing...</span> });
-    setTimeout(() => { fetchUserData(); }, 3000); 
-  }, [toast, fetchUserData]);
-
-  const handleAdsgramClose = useCallback(() => {
-      setIsAdInProgress(false);
-  }, []);
-
-  const showAdsgramAdForHeart = useAdsgram({
-    blockId: ADSGRAM_STAKE_HEART_BLOCK_ID,
-    onReward: handleAdsgramRewardForHeart,
-    onError: handleAdsgramClose,
-    onClose: handleAdsgramClose,
-  });
-
+  // Watch ad for heart
   const watchAdForHeart = async () => {
-    if (!currentUser || isAdInProgress || isApiLoading) return;
     if (hearts >= MAX_POOLED_HEARTS) {
-      toast({ title: "Hearts Full" }); return;
+      toast({ title: "Hearts are full" });
+      return;
     }
+    
     setIsAdInProgress(true);
-    await showAdsgramAdForHeart();
+    // Simulate ad completion
+    setTimeout(() => {
+      fetchUserData();
+      setIsAdInProgress(false);
+      toast({ title: "Heart added!" });
+    }, 3000);
   };
-
-  const handleReplenishHearts = async () => {
-    if (!currentUser?.id || isApiLoading || replenishTimeLeft !== 'Ready!') return;
+  
+  // Replenish hearts
+  const replenishHearts = async () => {
     setIsApiLoading(true);
     try {
       const res = await fetch('/api/games/replenish-hearts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser?.id })
       });
+      
       const data = await res.json();
+      
       if (data.success) {
-        toast({ title: "Hearts Replenished!" });
-        updateUserSession({ game_hearts: data.hearts, last_heart_replenished: data.nextReplenish });
-        setHearts(parseHeartCount({ ...currentUser, game_hearts: data.hearts }));
-        localStorage.setItem(LOCAL_STORAGE_REPLENISH_KEY, data.nextReplenish);
+        updateUserSession({
+          game_hearts: data.hearts,
+          last_heart_replenished: data.nextReplenish
+        });
+        toast({ title: "Hearts replenished!" });
       } else {
-        toast({ title: "Not Yet", description: data.message });
+        toast({ title: "Cannot replenish yet", description: data.message });
       }
     } catch (error) {
       toast({ title: "Error", variant: "destructive" });
@@ -359,152 +399,218 @@ export default function GamePage() {
       setIsApiLoading(false);
     }
   };
-  
-  useEffect(() => {
-    const lastReplenishIso = currentUser?.last_heart_replenished || localStorage.getItem(LOCAL_STORAGE_REPLENISH_KEY);
-    if (!lastReplenishIso || gameState === 'playing' || hearts >= MAX_POOLED_HEARTS) {
-        setReplenishTimeLeft('');
-        return;
-    }
-    const intervalId = setInterval(() => {
-        const nextReplenishTime = new Date(lastReplenishIso).getTime() + THREE_HOURS_IN_MS;
-        const diff = nextReplenishTime - Date.now();
-        if (diff <= 0) {
-            setReplenishTimeLeft('Ready!');
-            clearInterval(intervalId);
-        } else {
-            const h = Math.floor(diff / (1000 * 60 * 60)).toString().padStart(2, '0');
-            const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)).toString().padStart(2, '0');
-            const s = Math.floor((diff % (1000 * 60)) / 1000).toString().padStart(2, '0');
-            setReplenishTimeLeft(`${h}:${m}:${s}`);
-        }
-    }, 1000);
-    return () => clearInterval(intervalId);
-  }, [currentUser?.last_heart_replenished, gameState, hearts]);
 
-  const canContinue = continuesUsed < MAX_DIAMOND_CONTINUES && (currentUser?.diamond_points ?? 0) >= DIAMONDS_TO_CONTINUE;
-
-  const renderGameContent = () => {
-    if (gameState === 'loading_user_data') {
-      return <div className="flex flex-grow items-center justify-center"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
-    }
-    
-    if (gameState === 'playing' || gameState === 'dropping') {
-      return (
-        <div className="relative bg-black/40 border-2 border-primary/20 rounded-lg overflow-hidden shadow-2xl shadow-primary/30 w-full h-full" onClick={handleDropBlock} role="button" aria-label="Drop Block">
-          <div style={{ transform: `translateY(${stackOffsetY}px)`, transition: 'transform 0.3s ease-out' }}>
-            {stackedBlocks.map(b => <div key={b.id} className={cn("absolute rounded-sm border", b.isPerfect && "ring-2 ring-yellow-300", b.id === 'base' ? 'border-muted/50' : 'border-border/60')} style={{ left: b.x, top: b.y, width: b.width, height: INITIAL_BLOCK_HEIGHT, background: b.color }}/>)}
-          </div>
-          {currentBlock && <div className="absolute rounded-sm border border-white/40 shadow-lg" style={{ left: currentBlock.x, top: currentBlock.y, width: currentBlock.width, height: INITIAL_BLOCK_HEIGHT, background: currentBlock.color }}/>}
-        </div>
-      );
-    }
-
-    if (gameState === 'gameover') {
-        return (
-            <div className="flex flex-col items-center justify-center text-center p-4 space-y-4 w-full animate-in fade-in-50">
-                <div className="p-6 bg-card/80 rounded-lg shadow-xl border border-primary/30 w-full max-w-sm">
-                    <Award size={48} className="text-yellow-400 mb-2 mx-auto" />
-                    <h2 className="text-3xl font-bold font-headline">Game Over!</h2>
-                    <p className="text-lg mb-4">Score: <span className="font-bold text-primary">{stackedBlocks.length > 0 ? stackedBlocks.length - 1 : 0}</span></p>
-                    {canContinue && (
-                        <Button onClick={handleSpendDiamonds} disabled={isApiLoading} size="lg" className="w-full mb-2 bg-sky-500 hover:bg-sky-600 text-white">
-                            {isApiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gem className="mr-2 h-4 w-4" />} 
-                            Continue (-{DIAMONDS_TO_CONTINUE}💎)
-                        </Button>
-                    )}
-                    <Button onClick={() => setGameState('idle')} variant="outline" size="lg" className="w-full">
-                        {isApiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                        Back to Menu
-                    </Button>
-                </div>
-            </div>
-        );
-    }
-    
-    if (gameState === 'idle') {
-        return (
-            <div className="flex flex-col items-center justify-center text-center p-4 space-y-4 max-w-sm w-full animate-in fade-in-50">
-                <h1 className="text-4xl font-bold font-headline text-primary filter drop-shadow-[0_2px_4px_hsl(var(--primary)/0.5)]">Sky-High Stacker</h1>
-                <p className="text-muted-foreground text-lg">Stack blocks perfectly to reach new heights!</p>
-                <div className="w-full space-y-3 pt-4">
-                    <Button onClick={startGame} disabled={isApiLoading || hearts <= 0 || !isGameAreaReady} size="lg" className="w-full h-12 text-md font-bold animate-pulse-glow bg-gradient-to-r from-primary to-accent">
-                        {isApiLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5 fill-current" />}
-                        {isApiLoading ? 'Starting...' : !isGameAreaReady ? 'Initializing...' : 'Play (-1 Heart)'}
-                    </Button>
-                    <div className="grid grid-cols-2 gap-3">
-                        <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-11 border-sky-500/80 text-sky-400 hover:bg-sky-500/10 hover:text-sky-300">
-                            {isAdInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tv className="mr-2 h-4 w-4" />} 
-                            Get <Heart className="inline h-4 w-4 mx-1 fill-current" />
-                        </Button>
-                        <Button onClick={handleReplenishHearts} disabled={isApiLoading || replenishTimeLeft !== 'Ready!'} variant="secondary" className="h-11">
-                            <Clock className="mr-2 h-4 w-4" />
-                            {replenishTimeLeft && replenishTimeLeft !== 'Ready!' ? replenishTimeLeft : 'Replenish'}
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    return null;
-  };
-  
-  const renderContainer = () => {
-    if (loadingUser) {
-      return (
-        <div className="flex flex-col items-center justify-center flex-grow p-4">
-          <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
-          <p className="text-muted-foreground">Loading Game...</p>
-        </div>
-      );
-    }
-    
-    if (telegramAuthError || !currentUser) {
-      return (
-        <div className="flex flex-col items-center justify-center flex-grow p-4 text-center">
-            <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
-            <h2 className="text-2xl font-semibold text-foreground mb-3">{telegramAuthError ? "Authentication Error" : "Login Required"}</h2>
-            <p className="text-muted-foreground mb-6">{telegramAuthError || "Please launch the app via Telegram to play."}</p>
-            <Button onClick={() => window.location.reload()} variant="outline">Relaunch App</Button>
-        </div>
-      );
-    }
-    
+  // Render auth error
+  if (telegramAuthError || !currentUser) {
     return (
-       <div className="flex flex-col flex-grow items-center justify-between w-full bg-gradient-to-br from-slate-900 via-purple-950/80 to-slate-900 text-slate-100 p-2 overflow-hidden">
-        {/* Game Header */}
-        <div className="w-full px-2 sm:px-4 py-2 bg-slate-900/90 backdrop-blur-sm shadow-md border-b border-primary/30 z-20 flex flex-wrap justify-between items-center gap-2">
-            <div className="flex items-center space-x-1">
-                {Array.from({ length: MAX_POOLED_HEARTS }).map((_, i) => <Heart key={`life-${i}`} className={cn("h-6 w-6 transition-all", i < hearts ? "text-red-500 fill-red-500" : "text-slate-600 fill-slate-700")} />)}
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-                <span className="flex items-center gap-1 p-1 px-2 bg-slate-700/60 rounded-md"><Coins className="text-yellow-400 h-4 w-4" /> <span className="font-semibold tabular-nums">{currentAttemptGold}</span></span>
-                {currentAttemptDiamonds > 0 && <span className="flex items-center gap-1 p-1 px-2 bg-slate-700/60 rounded-md"><Gem className="text-sky-400 h-4 w-4" /> <span className="font-semibold tabular-nums">{currentAttemptDiamonds.toFixed(2)}</span></span>}
-            </div>
-            <p className="text-sm font-bold flex items-center gap-1.5"><Award className="h-5 w-5 text-yellow-400" />{highScore}</p>
+      <AppShell>
+        <div className="flex flex-col items-center justify-center h-full p-4">
+          <div className="text-center max-w-md bg-slate-900/80 backdrop-blur-sm p-8 rounded-xl border border-slate-700">
+            <AlertTriangle className="h-16 w-16 text-rose-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-2">
+              {telegramAuthError ? "Authentication Error" : "Login Required"}
+            </h2>
+            <p className="text-slate-300 mb-6">
+              {telegramAuthError || "Please launch through Telegram to play"}
+            </p>
+            <Button
+              onClick={() => window.location.reload()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              Reload App
+            </Button>
+          </div>
         </div>
-
-        {/* Game Content Area */}
-        <div ref={gameAreaRef} className="flex flex-grow items-center justify-center w-full my-2">
-            {renderGameContent()}
-        </div>
-
-        {/* Drop Instruction */}
-        {(gameState === 'playing' || gameState === 'dropping') && (
-            <div className="text-sm text-center text-foreground/80 py-1.5 flex items-center justify-center gap-1.5 z-20 bg-black/30 px-3 rounded-full absolute bottom-4 left-1/2 -translate-x-1/2">
-                <MousePointerClick className="h-4 w-4" /> Tap or Press Space to Drop
-            </div>
-        )}
-      </div>
+      </AppShell>
     );
   }
 
   return (
     <AppShell>
-        <div className="flex flex-col" style={{ height: 'calc(100vh - var(--header-height, 64px) - var(--bottom-nav-height, 64px))'}}>
-            {renderContainer()}
+      <div 
+        ref={gameContainerRef}
+        className="relative w-full h-full overflow-hidden bg-gradient-to-br from-slate-900 to-gray-950"
+      >
+        {/* Game canvas */}
+        <canvas 
+          ref={canvasRef} 
+          className={cn(
+            "absolute inset-0 w-full h-full transition-opacity duration-500",
+            gameState !== 'playing' ? 'opacity-0' : 'opacity-100'
+          )}
+        />
+        
+        {/* UI Overlay */}
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Score display */}
+          <div className="absolute top-4 left-4 right-4 flex justify-between items-center">
+            <div className="flex items-center space-x-2 bg-slate-900/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-slate-700">
+              {Array.from({ length: MAX_POOLED_HEARTS }).map((_, i) => (
+                <Heart
+                  key={i}
+                  className={cn(
+                    "h-5 w-5 transition-all",
+                    i < hearts ? "text-rose-500 fill-rose-500" : "text-slate-600 fill-slate-700"
+                  )}
+                />
+              ))}
+            </div>
+            
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1 bg-slate-900/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-slate-700">
+                <Coins className="h-5 w-5 text-yellow-400" />
+                <span className="font-bold text-white">{gold}</span>
+              </div>
+              
+              <div className="flex items-center space-x-1 bg-slate-900/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-slate-700">
+                <Gem className="h-5 w-5 text-sky-400" />
+                <span className="font-bold text-white">{diamonds.toFixed(1)}</span>
+              </div>
+              
+              <div className="flex items-center space-x-1 bg-slate-900/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-slate-700">
+                <Award className="h-5 w-5 text-yellow-400" />
+                <span className="font-bold text-white">{score}</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Drop hint */}
+          {gameState === 'playing' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-900/80 backdrop-blur-sm px-4 py-2 rounded-full border border-slate-700 pointer-events-auto"
+            >
+              <p className="text-sm font-medium text-white flex items-center">
+                <span className="mr-2">Tap to drop</span>
+                <span className="inline-block animate-bounce">👇</span>
+              </p>
+            </motion.div>
+          )}
         </div>
+        
+        {/* Game menus */}
+        <AnimatePresence>
+          {gameState === 'idle' && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center p-4"
+            >
+              <div className="bg-slate-900/90 backdrop-blur-lg rounded-xl border border-slate-700 p-8 max-w-md w-full shadow-2xl">
+                <motion.h1
+                  initial={{ y: -20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                  className="text-4xl font-bold text-center mb-6 bg-gradient-to-r from-indigo-400 to-purple-500 bg-clip-text text-transparent"
+                >
+                    Tower Stack
+                </motion.h1>
+                
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="space-y-4"
+                >
+                  <Button
+                    onClick={startGame}
+                    disabled={hearts <= 0 || isApiLoading}
+                    size="lg"
+                    className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-lg shadow-lg"
+                  >
+                    {isApiLoading ? (
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    ) : (
+                      <Play className="h-6 w-6 mr-2 fill-current" />
+                    )}
+                    {hearts <= 0 ? 'No Hearts Left' : 'Start Game'}
+                  </Button>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      onClick={watchAdForHeart}
+                      disabled={isAdInProgress || hearts >= MAX_POOLED_HEARTS}
+                      variant="outline"
+                      size="sm"
+                      className="h-11 border-emerald-500/50 hover:border-emerald-500 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                    >
+                      {isAdInProgress ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <span className="mr-2">Ad</span>
+                      )}
+                      Get Heart
+                    </Button>
+                    
+                    <Button
+                      onClick={replenishHearts}
+                      disabled={replenishTime !== 'Ready!' || isApiLoading}
+                      variant="outline"
+                      size="sm"
+                      className="h-11 border-amber-500/50 hover:border-amber-500 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                    >
+                      <Clock className="h-4 w-4 mr-2" />
+                      Replenish
+                    </Button>
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
+          )}
+          
+          {gameState === 'gameover' && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            >
+              <div className="bg-slate-900/90 backdrop-blur-lg rounded-xl border border-slate-700 p-8 max-w-md w-full shadow-2xl">
+                <div className="text-center mb-6">
+                  <Award className="h-14 w-14 text-yellow-400 mx-auto mb-3" />
+                  <h2 className="text-3xl font-bold text-white mb-2">Game Over!</h2>
+                  <p className="text-xl text-slate-300">
+                    Score: <span className="font-bold text-white">{score}</span>
+                  </p>
+                  <p className="text-slate-400 mt-2">
+                    High Score: <span className="font-medium text-yellow-400">{highScore}</span>
+                  </p>
+                </div>
+                
+                <div className="space-y-3">
+                  {(continuesUsed < MAX_DIAMOND_CONTINUES) && (
+                    <Button
+                      onClick={continueGame}
+                      disabled={isApiLoading}
+                      size="lg"
+                      className="w-full h-14 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold"
+                    >
+                      {isApiLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                      ) : (
+                        <Gem className="h-5 w-5 mr-2" />
+                      )}
+                      Continue ({DIAMONDS_TO_CONTINUE} 💎)
+                    </Button>
+                  )}
+                  
+                  <Button
+                    onClick={() => setGameState('idle')}
+                    variant="outline"
+                    size="lg"
+                    className="w-full h-14 border-slate-600 hover:bg-slate-800/50 hover:border-slate-500 text-white"
+                  >
+                    <RefreshCw className="h-5 w-5 mr-2" />
+                    Main Menu
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </AppShell>
   );
 }
