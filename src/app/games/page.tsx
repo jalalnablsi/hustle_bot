@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { RAPIER, init } from '@dimforge/rapier3d-compat';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Play, Coins, Gem, Award, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
+import { Heart, Play, Coins, Gem, Award, RefreshCw, Clock, AlertTriangle, Tv } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/contexts/UserContext';
@@ -16,16 +16,14 @@ const GAME_TYPE_IDENTIFIER = 'stake-builder';
 const MAX_POOLED_HEARTS = 5;
 const DIAMONDS_TO_CONTINUE = 1;
 const MAX_DIAMOND_CONTINUES = 5;
+const HEART_REPLENISH_TIME = 3 * 60 * 60 * 1000; // 3 hours in ms
 
 export default function GamePage() {
   const { currentUser, telegramAuthError, updateUserSession, fetchUserData } = useUser();
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameContainerRef = useRef<HTMLDivElement>(null);
-  const [gameState, setGameState] = useState<'loading' | 'idle' | 'playing' | 'gameover'>('loading');
-  const [isApiLoading, setIsApiLoading] = useState(false);
-  const [isAdInProgress, setIsAdInProgress] = useState(false);
-
+  
   // Game state
   const {
     score,
@@ -34,29 +32,61 @@ export default function GamePage() {
     gold,
     diamonds,
     continuesUsed,
-    replenishTime,
+    lastReplenish,
     setGameData,
     addScore,
     addGold,
     addDiamonds,
     useHeart,
-    useContinue
+    useContinue,
+    setLastReplenish,
+    resetGame
   } = useStore();
 
-  // Initialize game
+  const [gameState, setGameState] = useState<'loading' | 'idle' | 'playing' | 'gameover'>('loading');
+  const [isApiLoading, setIsApiLoading] = useState(false);
+  const [isAdInProgress, setIsAdInProgress] = useState(false);
+  const [timeLeft, setTimeLeft] = useState('');
+
+  // Calculate time until next heart replenish
+  useEffect(() => {
+    if (!lastReplenish || hearts >= MAX_POOLED_HEARTS) {
+      setTimeLeft('');
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const nextReplenish = new Date(lastReplenish).getTime() + HEART_REPLENISH_TIME;
+      const diff = nextReplenish - Date.now();
+
+      if (diff <= 0) {
+        setTimeLeft('Ready!');
+        clearInterval(interval);
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [lastReplenish, hearts]);
+
+  // Initialize user data
   useEffect(() => {
     if (!currentUser) return;
 
     setGameData({
       hearts: Math.min(currentUser.game_hearts?.[GAME_TYPE_IDENTIFIER] || 0, MAX_POOLED_HEARTS),
       highScore: currentUser.stake_builder_high_score || 0,
-      replenishTime: currentUser.last_heart_replenished || ''
+      lastReplenish: currentUser.last_heart_replenished || new Date().toISOString()
     });
 
     setGameState('idle');
   }, [currentUser, setGameData]);
 
-  // Start game
+  // Start game function
   const startGame = async () => {
     if (hearts <= 0 || isApiLoading) {
       toast({ title: "No Hearts Left", description: "Watch an ad or wait for replenishment" });
@@ -69,7 +99,10 @@ export default function GamePage() {
       const res = await fetch('/api/games/use-heart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser?.id, gameType: GAME_TYPE_IDENTIFIER })
+        body: JSON.stringify({ 
+          userId: currentUser?.id, 
+          gameType: GAME_TYPE_IDENTIFIER 
+        })
       });
       
       const data = await res.json();
@@ -93,6 +126,7 @@ export default function GamePage() {
     if (!canvasRef.current) return;
 
     setGameState('playing');
+    resetGame();
     
     // Initialize physics
     await init();
@@ -102,12 +136,7 @@ export default function GamePage() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111827);
     
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 5, 10);
     
     const renderer = new THREE.WebGLRenderer({
@@ -118,7 +147,7 @@ export default function GamePage() {
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     
-    // Add lights
+    // Lighting
     const ambientLight = new THREE.AmbientLight(0x404040);
     scene.add(ambientLight);
     
@@ -140,7 +169,7 @@ export default function GamePage() {
     ground.position.y = -groundHeight / 2;
     scene.add(ground);
     
-    // Create physics ground
+    // Physics ground
     const groundColliderDesc = RAPIER.ColliderDesc.cuboid(
       groundSize / 2,
       groundHeight / 2,
@@ -210,27 +239,13 @@ export default function GamePage() {
       const isPerfect = xDiff < 0.2;
       
       // Calculate overlap
-      const overlapX = Math.max(
-        lastBlock.position.x - lastBlock.scale.x / 2,
-        currentBlock.position.x - currentBlock.scale.x / 2
-      );
-      const overlapZ = Math.max(
-        lastBlock.position.z - lastBlock.scale.z / 2,
-        currentBlock.position.z - currentBlock.scale.z / 2
-      );
-      
       const newWidth = Math.min(
         lastBlock.scale.x - Math.abs(currentBlock.position.x - lastBlock.position.x),
         currentBlock.scale.x
       );
       
-      const newDepth = Math.min(
-        lastBlock.scale.z - Math.abs(currentBlock.position.z - lastBlock.position.z),
-        currentBlock.scale.z
-      );
-      
       // Check if game over
-      if (newWidth < 0.3 || newDepth < 0.3) {
+      if (newWidth < 0.3) {
         endGame();
         return;
       }
@@ -255,25 +270,26 @@ export default function GamePage() {
       }
       
       // Create new block
-      currentBlock = createBlock(newWidth, 0.5, newDepth);
+      currentBlock = createBlock(newWidth, 0.5, 2);
       blocks.push(currentBlock);
       
       // Increase difficulty
       blockSpeed += 0.005;
     };
     
-    // Handle window resize
-    const onResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+    // Event listeners
+    const handleClick = () => dropBlock();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') dropBlock();
     };
-    
-    window.addEventListener('resize', onResize);
+
+    window.addEventListener('click', handleClick);
+    window.addEventListener('keydown', handleKeyDown);
     
     // Cleanup
     return () => {
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleKeyDown);
       renderer.dispose();
     };
   };
@@ -364,12 +380,30 @@ export default function GamePage() {
     }
     
     setIsAdInProgress(true);
-    // Simulate ad completion
-    setTimeout(() => {
-      fetchUserData();
+    try {
+      // Simulate ad completion
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      const res = await fetch('/api/games/watch-ad-for-heart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser?.id })
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        updateUserSession({ game_hearts: data.gameHearts });
+        setGameData({ hearts: Math.min(data.remainingHearts, MAX_POOLED_HEARTS) });
+        toast({ title: "Heart added!" });
+      } else {
+        toast({ title: "Failed to add heart", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Network Error", variant: "destructive" });
+    } finally {
       setIsAdInProgress(false);
-      toast({ title: "Heart added!" });
-    }, 3000);
+    }
   };
   
   // Replenish hearts
@@ -388,6 +422,10 @@ export default function GamePage() {
         updateUserSession({
           game_hearts: data.hearts,
           last_heart_replenished: data.nextReplenish
+        });
+        setGameData({ 
+          hearts: Math.min(data.hearts[GAME_TYPE_IDENTIFIER] || 0, MAX_POOLED_HEARTS),
+          lastReplenish: data.nextReplenish
         });
         toast({ title: "Hearts replenished!" });
       } else {
@@ -505,7 +543,7 @@ export default function GamePage() {
                   transition={{ delay: 0.1 }}
                   className="text-4xl font-bold text-center mb-6 bg-gradient-to-r from-indigo-400 to-purple-500 bg-clip-text text-transparent"
                 >
-                    Tower Stack
+                  Tower Stack
                 </motion.h1>
                 
                 <motion.div
@@ -539,20 +577,20 @@ export default function GamePage() {
                       {isAdInProgress ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : (
-                        <span className="mr-2">Ad</span>
+                        <Tv className="h-4 w-4 mr-2" />
                       )}
                       Get Heart
                     </Button>
                     
                     <Button
                       onClick={replenishHearts}
-                      disabled={replenishTime !== 'Ready!' || isApiLoading}
+                      disabled={timeLeft !== 'Ready!' || isApiLoading}
                       variant="outline"
                       size="sm"
                       className="h-11 border-amber-500/50 hover:border-amber-500 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
                     >
                       <Clock className="h-4 w-4 mr-2" />
-                      Replenish
+                      {timeLeft || 'Replenish'}
                     </Button>
                   </div>
                 </motion.div>
