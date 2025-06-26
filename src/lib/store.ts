@@ -1,4 +1,3 @@
-// lib/store.ts
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -10,8 +9,7 @@ type GameStore = {
   diamonds: number;
   hearts: number;
   continuesUsed: number;
-  replenishTime: string;
-  isGameActive: boolean;
+  lastReplenish: string;
   
   // Actions
   setGameData: (data: Partial<GameStore>) => void;
@@ -21,6 +19,7 @@ type GameStore = {
   useHeart: () => void;
   useContinue: () => void;
   resetGame: () => void;
+  setLastReplenish: (time: string) => void;
 };
 
 export const useStore = create<GameStore>()(
@@ -33,13 +32,10 @@ export const useStore = create<GameStore>()(
       diamonds: 0,
       hearts: 0,
       continuesUsed: 0,
-      replenishTime: '',
-      isGameActive: false,
+      lastReplenish: new Date().toISOString(),
       
-      // Action to set multiple game data at once
+      // Actions
       setGameData: (data) => set((state) => ({ ...state, ...data })),
-      
-      // Add to score and update high score if needed
       addScore: (points) => set((state) => {
         const newScore = state.score + points;
         return {
@@ -47,37 +43,24 @@ export const useStore = create<GameStore>()(
           highScore: Math.max(state.highScore, newScore),
         };
       }),
-      
-      // Add gold
       addGold: (amount) => set((state) => ({ gold: state.gold + amount })),
-      
-      // Add diamonds (with 1 decimal place)
       addDiamonds: (amount) => set((state) => ({
         diamonds: parseFloat((state.diamonds + amount).toFixed(1))
       })),
-      
-      // Use a heart (minimum 0)
       useHeart: () => set((state) => ({ hearts: Math.max(0, state.hearts - 1) })),
-      
-      // Use a continue
       useContinue: () => set((state) => ({ continuesUsed: state.continuesUsed + 1 })),
-      
-      // Reset game state (keep high score and resources)
-      resetGame: () => set({
-        score: 0,
-        continuesUsed: 0,
-        isGameActive: false
-      }),
+      resetGame: () => set({ score: 0, continuesUsed: 0 }),
+      setLastReplenish: (time) => set({ lastReplenish: time })
     }),
     {
-      name: 'game-storage', // LocalStorage key
+      name: 'game-storage',
       partialize: (state) => ({
         highScore: state.highScore,
         gold: state.gold,
         diamonds: state.diamonds,
         hearts: state.hearts,
-        replenishTime: state.replenishTime
-      }), // Only persist these values
+        lastReplenish: state.lastReplenish
+      }),
     }
   )
 );
