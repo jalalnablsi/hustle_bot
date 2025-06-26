@@ -149,7 +149,8 @@ export default function GamePage() {
   }, [gameAreaSize.width, stackedBlocks.length]);
 
   const initializeNewAttempt = useCallback(() => {
-    const { clientWidth, clientHeight } = gameAreaRef.current!;
+    if (!gameAreaRef.current) return;
+    const { clientWidth, clientHeight } = gameAreaRef.current;
     
     setCurrentAttemptGold(0);
     setCurrentAttemptDiamonds(0);
@@ -164,10 +165,11 @@ export default function GamePage() {
   }, [spawnNewBlock]);
 
   const startGame = useCallback(async () => {
-    if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle' || !isGameAreaReady) {
-        if (!isGameAreaReady) {
-            toast({ title: "Game Not Ready", description: "Game area is still preparing, please try again in a moment.", variant: "default" });
-        }
+    if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') {
+        return;
+    }
+     if (!isGameAreaReady) {
+        toast({ title: "Game Not Ready", description: "Game area is still preparing, please try again in a moment.", variant: "default" });
         return;
     }
 
@@ -427,7 +429,7 @@ export default function GamePage() {
                 <div className="w-full space-y-2 pt-4">
                     <Button onClick={startGame} disabled={isApiLoading || hearts <= 0 || !isGameAreaReady} size="lg" className="w-full h-12 text-md font-bold animate-pulse-glow">
                         {isApiLoading || !isGameAreaReady ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5 fill-current" />}
-                        {isGameAreaReady ? `Play (-1 Heart)` : `Initializing...`}
+                        {isApiLoading ? 'Starting...' : !isGameAreaReady ? 'Initializing...' : 'Play (-1 Heart)'}
                     </Button>
                     <div className="grid grid-cols-2 gap-2">
                         <Button onClick={watchAdForHeart} disabled={isApiLoading || isAdInProgress || hearts >= MAX_POOLED_HEARTS} variant="outline" className="h-10">
@@ -505,3 +507,5 @@ export default function GamePage() {
     </AppShell>
   );
 }
+
+    
