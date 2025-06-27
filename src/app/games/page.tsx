@@ -19,7 +19,7 @@ const MAX_DIAMOND_CONTINUES = 5;
 const HEART_REPLENISH_TIME = 3 * 60 * 60 * 1000; // 3 hours in ms
 
 export default function GamePage() {
-  const { currentUser, telegramAuthError, updateUserSession, fetchUserData } = useUser();
+  const { currentUser, loadingUser: contextLoadingUser, updateUserSession, fetchUserData, telegramAuthError } = useUser();
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameContainerRef = useRef<HTMLDivElement>(null);
