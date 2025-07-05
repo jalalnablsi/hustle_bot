@@ -14,7 +14,7 @@ import {
   Clock,
   MousePointerClick,
   AlertTriangle,
-} } from 'lucide-react';
+}  from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/contexts/UserContext';
