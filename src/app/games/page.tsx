@@ -88,31 +88,30 @@ export default function GamePage() {
     }
   }, [currentUser, loadingUser, parseHeartCount]);
 
-useEffect(() => {
-  const measureArea = () => {
-    if (gameAreaRef.current) {
-      const { clientWidth, clientHeight } = gameAreaRef.current;
-      if (clientWidth > 0 && clientHeight > 0) {
-        setGameAreaSize({ width: clientWidth, height: clientHeight });
-        setIsGameAreaReady(true);
-      } else {
-        setIsGameAreaReady(false);
-      }
+ useEffect(() => {
+    const measureArea = () => {
+        if (gameAreaRef.current) {
+            const { clientWidth, clientHeight } = gameAreaRef.current;
+            if (clientWidth > 0 && clientHeight > 0) {
+                setGameAreaSize({ width: clientWidth, height: clientHeight });
+                setIsGameAreaReady(true);
+            } else {
+                setIsGameAreaReady(false);
+            }
+        }
+    };
+
+    const observer = new ResizeObserver(measureArea);
+    const currentRef = gameAreaRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+      requestAnimationFrame(measureArea);
     }
-  };
-
-  const observer = new ResizeObserver(measureArea);
-  const currentRef = gameAreaRef.current;
-
-  if (currentRef) {
-    observer.observe(currentRef);
-    measureArea(); // قياس فوري
-  }
-
-  return () => {
-    if (currentRef) observer.unobserve(currentRef);
-  };
-}, []);
+    
+    return () => {
+      if (currentRef) observer.unobserve(currentRef);
+    }
+  }, []);
 
   const processGameOver = useCallback(async () => {
     if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
