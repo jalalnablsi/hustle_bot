@@ -88,30 +88,28 @@ export default function GamePage() {
     }
   }, [currentUser, loadingUser, parseHeartCount]);
 
- useEffect(() => {
-    const measureArea = () => {
-        if (gameAreaRef.current) {
-            const { clientWidth, clientHeight } = gameAreaRef.current;
-            if (clientWidth > 0 && clientHeight > 0) {
-                setGameAreaSize({ width: clientWidth, height: clientHeight });
-                setIsGameAreaReady(true);
-            } else {
-                setIsGameAreaReady(false);
-            }
-        }
-    };
-
-    const observer = new ResizeObserver(measureArea);
-    const currentRef = gameAreaRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-      requestAnimationFrame(measureArea);
+useEffect(() => {
+  const measureArea = () => {
+    if (gameAreaRef.current) {
+      const { clientWidth, clientHeight } = gameAreaRef.current;
+      if (clientWidth > 0 && clientHeight > 0) {
+        setGameAreaSize({ width: clientWidth, height: clientHeight });
+        setIsGameAreaReady(true);
+      } else {
+        setIsGameAreaReady(false);
+      }
     }
-    
-    return () => {
-      if (currentRef) observer.unobserve(currentRef);
-    }
-  }, []);
+  };
+  const observer = new ResizeObserver(measureArea);
+  const currentRef = gameAreaRef.current;
+  if (currentRef) {
+    observer.observe(currentRef);
+    requestAnimationFrame(measureArea); // قياس فوري
+  }
+  return () => {
+    if (currentRef) observer.unobserve(currentRef);
+  };
+}, []);
 
   const processGameOver = useCallback(async () => {
     if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
@@ -155,18 +153,18 @@ export default function GamePage() {
   }, [currentUser, stackedBlocks.length, currentAttemptGold, currentAttemptDiamonds, updateUserSession, toast]);
 
   const spawnNewBlock = useCallback((currentTopWidth: number, visualCurrentTopY: number) => {
-    if (gameAreaSize.width === 0) return;
-    const currentScore = Math.max(0, stackedBlocks.length - 1);
-    const speed = Math.min(SPEED_START + (currentScore * SPEED_INCREMENT), MAX_SPEED);
-    setCurrentBlock({
-      x: Math.random() < 0.5 ? 0 : gameAreaSize.width - currentTopWidth,
-      y: visualCurrentTopY - INITIAL_BLOCK_HEIGHT - 5,
-      width: currentTopWidth,
-      color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length],
-      direction: 1,
-      speed
-    });
-  }, [gameAreaSize.width, stackedBlocks.length]);
+  if (gameAreaSize.width === 0) return;
+  const currentScore = Math.max(0, stackedBlocks.length - 1);
+  const speed = Math.min(SPEED_START + (currentScore * SPEED_INCREMENT), MAX_SPEED);
+  setCurrentBlock({
+    x: Math.random() < 0.5 ? 0 : gameAreaSize.width - currentTopWidth,
+    y: visualCurrentTopY - INITIAL_BLOCK_HEIGHT - 5,
+    width: currentTopWidth,
+    color: BLOCK_COLORS[stackedBlocks.length % BLOCK_COLORS.length],
+    direction: 1,
+    speed
+  });
+}, [gameAreaSize.width, stackedBlocks.length]);
 
  const initializeNewAttempt = useCallback(() => {
   const gameArea = gameAreaRef.current;
