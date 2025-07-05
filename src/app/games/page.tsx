@@ -88,28 +88,31 @@ export default function GamePage() {
     }
   }, [currentUser, loadingUser, parseHeartCount]);
 
-  useEffect(() => {
-    const measureArea = () => {
-      if (gameAreaRef.current) {
-        const { clientWidth, clientHeight } = gameAreaRef.current;
-        if (clientWidth > 0 && clientHeight > 0) {
-          setGameAreaSize({ width: clientWidth, height: clientHeight });
-          setIsGameAreaReady(true);
-        } else {
-          setIsGameAreaReady(false);
-        }
+useEffect(() => {
+  const measureArea = () => {
+    if (gameAreaRef.current) {
+      const { clientWidth, clientHeight } = gameAreaRef.current;
+      if (clientWidth > 0 && clientHeight > 0) {
+        setGameAreaSize({ width: clientWidth, height: clientHeight });
+        setIsGameAreaReady(true);
+      } else {
+        setIsGameAreaReady(false);
       }
-    };
-    const observer = new ResizeObserver(measureArea);
-    const currentRef = gameAreaRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-      requestAnimationFrame(measureArea);
     }
-    return () => {
-      if (currentRef) observer.unobserve(currentRef);
-    };
-  }, []);
+  };
+
+  const observer = new ResizeObserver(measureArea);
+  const currentRef = gameAreaRef.current;
+
+  if (currentRef) {
+    observer.observe(currentRef);
+    measureArea(); // قياس فوري
+  }
+
+  return () => {
+    if (currentRef) observer.unobserve(currentRef);
+  };
+}, []);
 
   const processGameOver = useCallback(async () => {
     if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
@@ -166,59 +169,97 @@ export default function GamePage() {
     });
   }, [gameAreaSize.width, stackedBlocks.length]);
 
-  const initializeNewAttempt = useCallback(() => {
-    const { clientWidth, clientHeight } = gameAreaRef.current!;
-    setCurrentAttemptGold(0);
-    setCurrentAttemptDiamonds(0);
-    setConsecutivePerfects(0);
-    setContinuesUsed(0);
-    setStackOffsetY(0);
-    const baseBlock = {
-      id: 'base',
-      x: (clientWidth - INITIAL_BASE_WIDTH) / 2,
-      y: clientHeight - INITIAL_BLOCK_HEIGHT,
-      width: INITIAL_BASE_WIDTH,
-      color: 'hsl(var(--muted))'
-    };
-    setStackedBlocks([baseBlock]);
-    spawnNewBlock(baseBlock.width, baseBlock.y);
-    setGameState('playing');
-  }, [spawnNewBlock]);
+ const initializeNewAttempt = useCallback(() => {
+  const gameArea = gameAreaRef.current;
+  if (!gameArea || gameArea.clientWidth === 0 || gameArea.clientHeight === 0) {
+    toast({ title: "Game Area Not Ready", description: "Please try again.", variant: "destructive" });
+    setGameState('idle');
+    setIsApiLoading(false);
+    return;
+  }
 
-  const startGame = useCallback(async () => {
-    if (!isGameAreaReady || !gameAreaRef.current || gameAreaRef.current.clientWidth === 0) {
-      toast({ title: "Game is Initializing", description: "Please wait a moment and try again.", variant: "default" });
-      return;
-    }
-    if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') {
-      if (hearts <= 0) toast({ title: "No Hearts Left!", description: "Watch an ad or wait for replenishment.", variant: "default" });
-      return;
-    }
+  const { clientWidth, clientHeight } = gameArea;
 
-    setIsApiLoading(true);
-    try {
-      const res = await fetch('/api/games/use-heart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, gameType: GAME_TYPE_IDENTIFIER })
-      });
-      const data = await res.json();
-      if (!data.success) {
-        toast({ title: 'Could Not Start', description: data.error, variant: 'destructive' });
-        fetchUserData();
-        setIsApiLoading(false);
-        return;
-      }
-      updateUserSession({ game_hearts: data.gameHearts });
-      setHearts(data.remainingHearts);
-      initializeNewAttempt();
-    } catch (error: any) {
-      toast({ title: 'Network Error', description: error.message, variant: 'destructive' });
-    } finally {
+  // التأكد من أن الأبعاد صحيحة
+  if (clientWidth <= 0 || clientHeight <= 0) {
+    toast({ title: "Invalid Game Area", description: "Please restart the game.", variant: "destructive" });
+    setGameState('idle');
+    setIsApiLoading(false);
+    return;
+  }
+
+  setCurrentAttemptGold(0);
+  setCurrentAttemptDiamonds(0);
+  setConsecutivePerfects(0);
+  setContinuesUsed(0);
+  setStackOffsetY(0);
+
+  const baseBlock = {
+    id: 'base',
+    x: (clientWidth - INITIAL_BASE_WIDTH) / 2,
+    y: clientHeight - INITIAL_BLOCK_HEIGHT,
+    width: INITIAL_BASE_WIDTH,
+    color: 'hsl(var(--muted))'
+  };
+
+  setStackedBlocks([baseBlock]);
+  spawnNewBlock(baseBlock.width, baseBlock.y);
+  setGameState('playing');
+}, [spawnNewBlock]);
+const startGame = useCallback(async () => {
+  if (!currentUser?.id || hearts <= 0 || isApiLoading || gameState !== 'idle') {
+    if (hearts <= 0) {
+      toast({ title: "No Hearts Left!", description: "Watch an ad or wait for replenishment.", variant: "default" });
+    }
+    return;
+  }
+
+  // التأكد من أن منطقة اللعب جاهزة
+  if (!isGameAreaReady || !gameAreaRef.current || gameAreaRef.current.clientWidth === 0) {
+    toast({ title: "Please Wait", description: "Initializing game area...", variant: "default" });
+    return;
+  }
+
+  setIsApiLoading(true);
+  try {
+    // خطوة 1: استهلاك القلب فقط بعد التأكد من جاهزية اللعبة
+    const res = await fetch('/api/games/use-heart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id, gameType: GAME_TYPE_IDENTIFIER }),
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      toast({ title: 'Could Not Start', description: data.error, variant: 'destructive' });
+      fetchUserData();
       setIsApiLoading(false);
+      return;
     }
-  }, [currentUser?.id, hearts, isApiLoading, gameState, isGameAreaReady, toast, fetchUserData, initializeNewAttempt, updateUserSession]);
 
+    updateUserSession({ game_hearts: data.gameHearts });
+    setHearts(data.remainingHearts);
+
+    // خطوة 2: التأكد من أن الأبعاد صحيحة قبل بدء اللعبة
+    const gameArea = gameAreaRef.current;
+    if (!gameArea || gameArea.clientWidth === 0 || gameArea.clientHeight === 0) {
+      toast({ title: "Game Area Not Ready", description: "Please try again.", variant: "destructive" });
+      setIsApiLoading(false);
+      return;
+    }
+
+    // خطوة 3: تأجيل تنفيذ `initializeNewAttempt` حتى تكون الأبعاد جاهزة
+    requestAnimationFrame(() => {
+      initializeNewAttempt();
+    });
+
+  } catch (error: any) {
+    toast({ title: 'Network Error', description: error.message, variant: 'destructive' });
+  } finally {
+    setIsApiLoading(false);
+  }
+}, [currentUser?.id, hearts, isApiLoading, gameState, isGameAreaReady, toast, fetchUserData, initializeNewAttempt, updateUserSession]);
   const continueAttempt = useCallback(() => {
     if (stackedBlocks.length > 0) {
       const topBlock = stackedBlocks[stackedBlocks.length - 1];
